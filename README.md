@@ -9,12 +9,12 @@ width, nothing shrinks, and the view slides to it.
 
 | Keys | What they do |
 |---|---|
-| Cmd+D, Cmd+Alt+D | New pane right, left |
-| Cmd+Alt+Left/Right or H/L | Move the focus (the view glides to it) |
-| Cmd+Alt+1-9, Home, End, C | Jump to a column, the first, the last; centre |
-| Cmd+Alt+Shift+Left/Right | Move the column |
-| Cmd+Shift+Enter | Cycle column width |
-| Cmd+Shift+W | Close the pane |
+| Cmd+1 ... Cmd+9 | Go to pane 1 to 9 |
+| Cmd+[ and Cmd+] | Previous and next pane (the view glides to it) |
+| Cmd+D and Cmd+Shift+D | New pane to the right and to the left |
+| Cmd+W | Close the pane |
+| Cmd+Shift+[ and Cmd+Shift+] | Move the pane left and right |
+| Cmd+Shift+Enter | Make the pane wider or narrower |
 | Ctrl+drag a pane header | Rearrange |
 | Wheel over a header or the minimap | Slide the view |
 
@@ -30,7 +30,7 @@ cp kanso/layouts/kanso.json ~/.config/herdr-app/layouts/
 cp kanso/layouts/kanso.png  ~/.config/herdr-app/layouts/
 cp kanso/themes/*.json      ~/.config/herdr-app/themes/
 cp -R kanso/mods/kanso-*    ~/.config/herdr-app/mods/
-# then add the "layout:kanso" section of kanso/keys.json to ~/.config/herdr-app/keys.json
+# then add the "layout:kanso" section (it also keeps Cmd+Alt+arrows and Cmd+Alt+H/L as alternatives) of kanso/keys.json to ~/.config/herdr-app/keys.json
 herdr-app do layout.switch --name kanso
 ```
 

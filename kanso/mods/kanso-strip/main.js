@@ -430,7 +430,7 @@ export default class Strip extends View {
         .child(div().w(Math.round(6 + c.w * 18)).h(4).rounded_full().bg(tone));
     });
     return h_flex().id("strip-map").size_full().gap(3).justify_center().items_center()
-      .tooltip("⌘⌥ ← → move · ⌘⌥1-9 column · ⌘D new · ⌘⇧↵ width · scroll to slide")
+      .tooltip("⌘1-9 go to · ⌘[ ⌘] previous, next · ⌘D new · ⌘W close · ⌘⇧[ ⌘⇧] move")
       .on_scroll_wheel((ev) => this.wheel(ev, st))
       .children(pills);
   }

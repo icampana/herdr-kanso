@@ -135,19 +135,18 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     right-click opens the shipped tab menu.
   - Scrolling over the bar moves one tab per mouse-wheel notch, or per
     trackpad swipe (about 40px of travel).
-- **The strip** (keys in `keys.json`, section `layout:kanso`):
-  - Cmd+D opens a pane to the right, Cmd+Alt+D to the left. The new pane is
-    focused and the view glides to it. The header's split button does the
-    same. Vertical keys (Cmd+Shift+D, Cmd+Alt+Up/Down) go to the program, so
-    Herdr's own vertical splits never fire here.
-  - Cmd+Alt+Left/Right (or Cmd+Alt+H/L) move the focus, and the view glides
-    to it (it eases over about 0.3 s). Cmd+Alt+1-9 jump to a column,
-    Cmd+Alt+Home and End to the first and last, Cmd+Alt+C centres the
-    focused one. Cmd+Alt+Shift+Left/Right
-    (or H/L) move the focused column.
-  - Cmd+Shift+Enter (or the header's zoom button) cycles the column's width
+- **The strip** (keys in `keys.json`, section `layout:kanso`; in Kanso they
+  replace Herdr's tab keys, since the canvas is where you move):
+  - Cmd+1 to Cmd+9 go to that pane; Cmd+[ and Cmd+] go to the previous and
+    next one. The view glides to it (eases over about 0.3 s).
+  - Cmd+D opens a pane to the right, Cmd+Shift+D to the left. The new pane is
+    focused. The header's split button and the right-click menu do the same.
+  - Cmd+W closes the focused pane. Cmd+Shift+[ and Cmd+Shift+] move it left
+    and right. Cmd+Shift+Enter (or the header's zoom button) cycles its width
     1/3, 1/2, 2/3, 1.
-  - Cmd+Shift+W closes the focused pane.
+  - Kept as alternatives: Cmd+Alt+Left/Right or H/L (focus), with Shift
+    (move), Cmd+Alt+1-9, Cmd+Alt+Home/End, Cmd+Alt+C (centre). Vertical keys
+    (Cmd+Alt+Up/Down, Cmd+Alt+Enter) go to the program.
   - The wheel or a swipe over any pane header or the minimap slides the view
     continuously (600px of travel per view width) without moving the focus;
     if the focused pane slides out of full view, the keyboard moves to the
