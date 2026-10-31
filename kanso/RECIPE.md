@@ -67,7 +67,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       neighbour stays peeking in at the edge. The view slides continuously
       over the row. A column cut by the edge shows that terminal's screen as
       dimmed text clipped at the edge (a "peek"; Herdr can't clip a live
-      terminal). Off-screen columns aren't drawn. A column can stack panes,
+      terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. A column can stack panes,
       each full height (or half). A tab holding a mod pane falls back to
       Herdr's own split view.
       Each pane has a 34-tall header (`kanso-pane`, always shown):
@@ -138,8 +138,11 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - Cmd+D opens a pane to the right, Cmd+Alt+D to the left, Cmd+Shift+D below
     and Cmd+Alt+Shift+D above. The new pane is focused and the view slides to
     it. The header's split buttons do the same (right, below).
-  - Cmd+Alt+Arrows move the focus, and the view follows. Cmd+Alt+Shift+Arrows
-    move the focused column left/right, or the pane up/down in its column.
+  - Cmd+Alt+Arrows (or Cmd+Alt+H/J/K/L) move the focus, and the view glides
+    to it (it eases over about 0.3 s). Cmd+Alt+1-9 jump to a column,
+    Cmd+Alt+Home and End to the first and last, Cmd+Alt+C centres the
+    focused one. Cmd+Alt+Shift+Arrows
+    (or H/J/K/L) move the focused column left/right, or the pane up/down in its column.
   - Cmd+Shift+Enter (or the header's zoom button) cycles the column's width
     1/3, 1/2, 2/3, 1. Cmd+Alt+Enter cycles the pane height 1, 1/2.
   - Cmd+Shift+W closes the focused pane.

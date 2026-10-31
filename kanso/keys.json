@@ -16,6 +16,26 @@
     "cmd-shift-enter": "kanso-strip.width",
     "cmd-alt-enter": "kanso-strip.height",
     "cmd-alt-,": "kanso-strip.scroll-left",
-    "cmd-alt-.": "kanso-strip.scroll-right"
+    "cmd-alt-.": "kanso-strip.scroll-right",
+    "cmd-alt-h": "kanso-strip.go-left",
+    "cmd-alt-l": "kanso-strip.go-right",
+    "cmd-alt-k": "kanso-strip.go-up",
+    "cmd-alt-j": "kanso-strip.go-down",
+    "cmd-alt-shift-h": "kanso-strip.move-left",
+    "cmd-alt-shift-l": "kanso-strip.move-right",
+    "cmd-alt-shift-k": "kanso-strip.move-up",
+    "cmd-alt-shift-j": "kanso-strip.move-down",
+    "cmd-alt-home": "kanso-strip.first",
+    "cmd-alt-end": "kanso-strip.last",
+    "cmd-alt-c": "kanso-strip.center",
+    "cmd-alt-1": "kanso-strip.col-1",
+    "cmd-alt-2": "kanso-strip.col-2",
+    "cmd-alt-3": "kanso-strip.col-3",
+    "cmd-alt-4": "kanso-strip.col-4",
+    "cmd-alt-5": "kanso-strip.col-5",
+    "cmd-alt-6": "kanso-strip.col-6",
+    "cmd-alt-7": "kanso-strip.col-7",
+    "cmd-alt-8": "kanso-strip.col-8",
+    "cmd-alt-9": "kanso-strip.col-9"
   }
 }

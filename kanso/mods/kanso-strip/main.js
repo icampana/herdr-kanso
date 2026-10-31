@@ -77,7 +77,16 @@ export default class Strip extends View {
     this.pendingFocus = null;
     this.sets = [];
     // Scrolling writes the layout at most every 60 ms, however fast the wheel.
-    cx.timer.every(60, (cx) => { if (this.dirty) { this.dirty = false; cx.notify(); } });
+    cx.timer.every(60, (cx) => {
+      // Ease the view toward where reveal wants it: a short glide, not a jump.
+      const st = this.state[this.tab()];
+      if (st && st.tx !== undefined && Math.abs(st.tx - st.vx) > 0.002) {
+        const d = st.tx - st.vx;
+        st.vx = Math.abs(d) < 0.01 ? st.tx : st.vx + d * 0.5;
+        this.dirty = true;
+      }
+      if (this.dirty) { this.dirty = false; cx.notify(); }
+    });
     cx.spawn(async (cx) => {
       for (;;) {
         let c;
@@ -114,7 +123,13 @@ export default class Strip extends View {
     return div().id("peek").relative().size_full().overflow_hidden().bg(t.background).cursor_pointer()
       .on_size_change((sz, cx) => { this.size = sz; cx.notify(); })
       .on_click(() => setShared("strip.req", { op: "focus", pane: p.peek, n: nonce() }))
-      .child(text.opacity(0.4));
+      .child(text.opacity(0.4))
+      // What is behind the edge, so an empty-looking peek still says where it leads.
+      .child(h_flex().absolute().bottom(14).w_full().justify_center().child(
+        h_flex().h(22).px(10).gap(6).items_center().rounded_full().bg(t.popover).text_size(11.5).text_color(t.muted)
+          .child(p.side === "left" ? "\u2039" : "")
+          .child(div().max_w(160).truncate().child(p.title ?? "Pane"))
+          .child(p.side === "left" ? "" : "\u203a")));
   }
 
   // ---- The model ---------------------------------------------------------------
@@ -173,7 +188,9 @@ export default class Strip extends View {
   }
 
   clampView(st) {
-    st.vx = clamp(st.vx ?? 0, 0, Math.max(0, this.total(st) - 1));
+    const max = Math.max(0, this.total(st) - 1);
+    st.vx = clamp(st.vx ?? 0, 0, max);
+    st.tx = clamp(st.tx ?? st.vx, 0, max);
     for (const c of st.cols) c.y = clamp(c.y ?? 0, 0, Math.max(0, c.panes.length - rows(c)));
   }
 
@@ -182,8 +199,10 @@ export default class Strip extends View {
     const at = this.where(st, id);
     if (!at) return;
     const s = this.start(st, at.ci), e = s + st.cols[at.ci].w;
-    if (s < st.vx) st.vx = s;
-    else if (e > st.vx + 1) st.vx = e - 1;
+    const from = st.tx ?? st.vx;
+    if (s < from) st.tx = s;
+    else if (e > from + 1) st.tx = e - 1;
+    if (st.tx !== st.vx) this.dirty = true;
     const col = st.cols[at.ci], n = rows(col);
     if (at.ri < (col.y ?? 0)) col.y = at.ri;
     if (at.ri >= (col.y ?? 0) + n) col.y = at.ri - n + 1;
@@ -235,7 +254,13 @@ export default class Strip extends View {
       case "height": if (at) { st.cols[at.ci].h = step(H_STEPS, st.cols[at.ci].h); this.reveal(st, id); } break;
       case "scroll-left": this.slide(st, -1 / 3); break;
       case "scroll-right": this.slide(st, 1 / 3); break;
-      case "center": if (at) { st.vx = this.start(st, at.ci) + st.cols[at.ci].w / 2 - 0.5; this.clampView(st); } break;
+      case "center": if (at) { st.tx = this.start(st, at.ci) + st.cols[at.ci].w / 2 - 0.5; this.clampView(st); this.dirty = true; } break;
+      case "first": go(0); break;
+      case "last": go(st.cols.length - 1); break;
+      default: {
+        const n = /^col-(\d)$/.exec(name);
+        if (n) go(Number(n[1]) - 1);
+      }
     }
   }
 
@@ -244,6 +269,7 @@ export default class Strip extends View {
   // view the keyboard moves to the nearest pane still whole in view.
   slide(st, d) {
     st.vx = (st.vx ?? 0) + d;
+    st.tx = undefined;
     this.clampView(st);
     this.dirty = true;
     this.slidAt = Date.now();
@@ -325,7 +351,7 @@ export default class Strip extends View {
           peekGeo[id] = { w: c.w, frac };
           out.push({ id: `strip-peek-${id}`, type: "column", size: { weight: weight(frac) }, background: "background", children: [
             header(id),
-            { id: `peek-${id}`, type: "block", content: { mod: "kanso-strip", props: { peek: id, terminal: byId.get(id).terminal, side: s < v0 ? "left" : "right" } } },
+            { id: `peek-${id}`, type: "block", content: { mod: "kanso-strip", props: { peek: id, terminal: byId.get(id).terminal, side: s < v0 ? "left" : "right", title: byId.get(id).program?.name || byId.get(id).title || "Pane" } } },
           ] });
         }
       }
@@ -409,6 +435,7 @@ export default class Strip extends View {
     const scale = 120 / Math.max(total, 1);
     const at = this.where(st, st.focus);
     return h_flex().id("strip-map").size_full().justify_center().items_center()
+      .tooltip("⌘⌥ arrows or HJKL move · ⌘⌥1-9 column · ⌘D new · ⌘⇧↵ width · scroll to slide")
       .on_scroll_wheel((ev) => this.wheel(ev, st))
       .child(div().relative().w(Math.round(total * scale)).h(12)
         .children(st.cols.map((c, i) => {

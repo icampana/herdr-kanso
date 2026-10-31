@@ -10,7 +10,8 @@ width, nothing shrinks, and the view slides to it.
 | Keys | What they do |
 |---|---|
 | Cmd+D, Cmd+Alt+D, Cmd+Shift+D, Cmd+Alt+Shift+D | New pane right, left, below, above |
-| Cmd+Alt+Arrows | Move the focus (the view follows) |
+| Cmd+Alt+Arrows or H/J/K/L | Move the focus (the view glides to it) |
+| Cmd+Alt+1-9, Home, End, C | Jump to a column, the first, the last; centre |
 | Cmd+Alt+Shift+Arrows | Move the pane or column |
 | Cmd+Shift+Enter, Cmd+Alt+Enter | Cycle column width, pane height |
 | Cmd+Shift+W | Close the pane |
