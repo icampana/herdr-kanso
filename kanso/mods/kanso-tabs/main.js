@@ -50,8 +50,11 @@ export default class Tabs extends View {
   }
 
   // Which panel is open now (null: closed), read from the layout.
+  // The node that hides: a "panel" wrapper if the layout has one, else the
+  // stack itself (Herdr folds a wrapper with a single child into it).
   openPanel(panel, body) {
-    return !panel || panel.hidden ? null : (body?.children?.[0]?.id ?? null);
+    const box = panel ?? body;
+    return !box || box.hidden ? null : (body?.children?.[0]?.id ?? null);
   }
 
   // Shows panel `id` (null: closes it) by rewriting the panel stack to hold
@@ -59,10 +62,10 @@ export default class Tabs extends View {
   mount(id) {
     const tree = layout();
     const panel = find(tree, "panel"), body = find(tree, "panel-body");
-    if (!panel || !body || (id && !PANELS[id])) return;
+    if (!body || (id && !PANELS[id])) return;
     body.children = id ? [{ id, type: "block", content: { mod: PANELS[id] } }] : [];
     if (id) body.active = id; else delete body.active;
-    panel.hidden = !id;
+    (panel ?? body).hidden = !id;
     this.want = id;
     this.mountedAt = Date.now();
     run("layout.set", { layout: tree });
@@ -76,10 +79,10 @@ export default class Tabs extends View {
   // Keeps the layout honest when something else opened or closed the panel
   // (a key, the Specs close button): hidden means unmounted, shown means mounted.
   reconcile(space, panel, body, now) {
-    if (!panel || !body || this.inFlight(now)) return;
-    const mounted = (body.children ?? []).length > 0;
-    if (panel.hidden && mounted) this.mount(null);
-    else if (!panel.hidden && !mounted) this.mount(this.panels[space?.id] ?? null);
+    if (!body || this.inFlight(now)) return;
+    const hidden = (panel ?? body).hidden, mounted = (body.children ?? []).length > 0;
+    if (hidden && mounted) this.mount(null);
+    else if (!hidden && !mounted) this.mount(this.panels[space?.id] ?? null);
   }
 
   // The side panel is remembered per space: switching shows that space's choice

@@ -16,7 +16,8 @@ function findNode(node, id) {
 }
 function panelShows(id) {
   const tree = layout(), panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
-  return !panel || (!panel.hidden && body?.active === id);
+  const box = panel ?? body;
+  return !box || (!box.hidden && body?.active === id);
 }
 
 function location() {

@@ -5,8 +5,10 @@ greys, no outlines, no decoration: the only text in full ink is the focused
 pane's, and color appears only when an agent's state matters (working, needs
 you, finished). Its second idea is that nothing you aren't looking at runs:
 side panels exist only while open, and background checks slow down when the
-window is behind others. The name is the Japanese principle of simplicity,
-removing what is not needed.
+window is behind others. Its third is an endless strip of panes, as in
+Omarchy's scrolling layout: a new pane opens beside the focused one at its own
+width, nothing shrinks, and the view slides to it. The name is the Japanese
+principle of simplicity, removing what is not needed.
 
 ![Kanso](preview.png)
 
@@ -59,7 +61,14 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         Specs. They are ghost buttons 26 tall (icon 15, text 12) with a wash
         when their panel is open. Insights and Specs show only when their
         mods are installed.
-    - **Panes**: the active tab, split with 1px `border` gaps and no frames.
+    - **Panes**: an endless strip (`kanso-strip`). Panes sit in columns,
+      each a share of the view wide (1/3, 1/2, 2/3 or all of it; new ones
+      1/2), with 1px `border` gaps and no frames. Only the columns that fit
+      are drawn; the others are off to the left or right, still running.
+      What doesn't fill the view stays empty `background`, so a column never
+      grows to fill it. A column can stack panes, each the full height (or
+      half), and scrolls up and down the same way. A tab holding a mod pane
+      falls back to Herdr's own split view.
       Each pane has a 34-tall header (`kanso-pane`, always shown):
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
         `foreground` and medium weight when focused, `muted` otherwise.
@@ -71,7 +80,11 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     - **Side panel**, at the right of the panes: 368 wide (280 to 900),
       hidden by default. It holds whichever panel is open: `kanso-files`,
       `insights`, `kanso-changes` or `sdd-focused`.
-  - **Status bar** (`kanso-status`), 26 tall, text 11.5 `muted`:
+  - **Status bar**, 26 tall: `kanso-status`, then a 240-wide minimap
+    (`kanso-strip`): one mark per column (width by its share, split per
+    pane), `input` off-screen, `muted` in view, `foreground` for the focused
+    pane. It shows only with more than one pane. `kanso-status`, text 11.5
+    `muted`:
     - At the left, the machine (monitor or server icon, "This computer") and
       the branch.
     - At the right, "N agent(s) need you" in `blocked` with a dot (only when
@@ -118,6 +131,22 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     right-click opens the shipped tab menu.
   - Scrolling over the bar moves one tab per mouse-wheel notch, or per
     trackpad swipe (about 40px of travel).
+- **The strip** (keys in `keys.json`, section `layout:kanso`):
+  - Cmd+D opens a pane to the right, Cmd+Alt+D to the left, Cmd+Shift+D below
+    and Cmd+Alt+Shift+D above. The new pane is focused and the view slides to
+    it. The header's split buttons do the same (right, below).
+  - Cmd+Alt+Arrows move the focus, and the view follows. Cmd+Alt+Shift+Arrows
+    move the focused column left/right, or the pane up/down in its column.
+  - Cmd+Shift+Enter (or the header's zoom button) cycles the column's width
+    1/3, 1/2, 2/3, 1. Cmd+Alt+Enter cycles the pane height 1, 1/2.
+  - Cmd+Shift+W closes the focused pane.
+  - The wheel or a swipe over any pane header or the minimap slides the view
+    one column without moving the focus. Cmd+Alt+, and Cmd+Alt+. do the same
+    from the keyboard. Clicking a minimap mark focuses that column.
+  - Ctrl+drag a pane header onto another rearranges: the pane becomes a
+    column beside the target, on the side it came from. With Shift also
+    held, it stacks under the target. The dragged header dims, and the target
+    gets a wash.
 - **Side panels, on demand**:
   - Clicking a panel button rewrites the panel stack to hold only that
     panel's block and shows it. Clicking it again, or closing the panel any
@@ -155,6 +184,11 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     machines via `hc machine ls`.
   - `kanso-tabs`: tabs, panel buttons and the on-demand panel mount via
     `layout.set`.
+  - `kanso-strip`: the strip. The copy in the status row is the controller
+    and minimap; copies with `{filler: true}` paint free space. State per
+    tab lives in shared `strip.state` (`{cols: [{panes, w, h, y}], x}`).
+    Headers talk to it through shared `strip.req` (scroll, move, width),
+    `strip.intent` (where the next new pane goes) and `strip.drag`.
   - `kanso-pane`: pane header.
   - `kanso-chrome`: sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
@@ -176,6 +210,24 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   `hc` (machines). Nothing reaches the network.
 
 ## Watch out
+
+- A layout may nest at most 16 levels (`layout.set` refuses deeper ones).
+  Put the strip's columns directly in `work-body` (column > cell column >
+  block), never inside another row.
+- Herdr folds the layout on its own: empty containers go, containers with a
+  single child are replaced by that child, and terminal blocks whose
+  terminal ended go. Never rely on an empty column for space (use a filler
+  block) or on a single-child wrapper's id. The side panel's toggle lives on
+  `panel-body` itself for that reason.
+- Herdr won't let a mod handle the mouse over terminal text, so reordering
+  is Ctrl+drag on the pane headers, not on the terminal.
+- A terminal block takes the keyboard on click, so `focused().pane` is null
+  and implicit pane commands fail. Pass `pane` or `terminal` explicitly
+  (`pane.split {pane}`, `pane.focus {terminal}`), and focus a new pane only
+  once its block is in the layout.
+- Cap layout writes: the strip writes only when its tree changes, and pauses
+  itself for 10 s after 6 writes in 3 s, so a mistake can't keep the window
+  busy.
 
 - Never use `.spin()` for a busy state. It redraws the whole window about
   30 times a second while any agent works, and every redraw repaints every
@@ -215,3 +267,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   lights sit inside it. Opened, it drags between 200 and 480 and reopens at
   the width you left.
 - One trackpad swipe over the tab bar moves exactly one tab.
+- Cmd+D three times from one pane gives four columns at half width. Two show,
+  the minimap shows four marks, and no pane is narrower than half the view.
+- Cmd+Alt+Left past the first column in view slides the view.
+  Cmd+Shift+Enter makes the focused column 2/3 wide without changing any
+  other column.
+- Ctrl+dragging one header onto another moves that pane beside it, and with
+  Shift it stacks.

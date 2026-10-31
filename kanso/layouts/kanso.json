@@ -8,29 +8,25 @@
       "children": [
         {
           "id": "brand",
-          "type": "column",
-          "children": [],
+          "type": "block",
+          "content": {
+            "mod": "kanso-chrome"
+          },
           "size": {
             "px": 48
           },
           "window_drag": true
         },
         {
-          "id": "sidebar-lists",
-          "type": "column",
-          "children": [
-            {
-              "id": "spaces",
-              "type": "block",
-              "content": {
-                "mod": "kanso-spaces"
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
-            }
-          ]
+          "id": "spaces",
+          "type": "block",
+          "content": {
+            "mod": "kanso-spaces"
+          },
+          "size": {
+            "weight": 1
+          },
+          "min": 90
         },
         {
           "id": "sidebar-footer",
@@ -107,15 +103,9 @@
                   "background": "border"
                 },
                 {
-                  "id": "panel",
-                  "type": "column",
-                  "children": [
-                    {
-                      "id": "panel-body",
-                      "type": "stack",
-                      "children": []
-                    }
-                  ],
+                  "id": "panel-body",
+                  "type": "stack",
+                  "children": [],
                   "size": {
                     "px": 368
                   },
@@ -138,14 +128,31 @@
           "resizable": false
         },
         {
-          "id": "status",
-          "type": "block",
-          "content": {
-            "mod": "kanso-status"
-          },
+          "id": "status-row",
+          "type": "row",
           "size": {
             "px": 26
-          }
+          },
+          "resizable": false,
+          "children": [
+            {
+              "id": "status",
+              "type": "block",
+              "content": {
+                "mod": "kanso-status"
+              }
+            },
+            {
+              "id": "strip-map",
+              "type": "block",
+              "content": {
+                "mod": "kanso-strip"
+              },
+              "size": {
+                "px": 240
+              }
+            }
+          ]
         }
       ],
       "padding": 6,

@@ -10,7 +10,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, theme, home } from "herdr";
+import { panes, props, run, theme, home, focused, shared, setShared } from "herdr";
 
 const BADGE_MAX_W = 220;
 
@@ -46,6 +46,28 @@ export default class Pane extends View {
       .child(div().min_w(0).truncate().child(text));
   }
 
+  // In the strip (props.strip), a split first says where the new pane goes,
+  // and the zoom button cycles the column's width instead.
+  act(command, args) {
+    const pane = props()?.pane;
+    if (props()?.strip && command === "pane.split") setShared("strip.intent", { dir: args.direction, from: pane, at: Date.now() });
+    if (props()?.strip && command === "pane.zoom") { setShared("strip.req", { op: "width", pane, n: Date.now() + Math.random() }); return; }
+    run(command, args);
+  }
+
+  // Wheel over a header slides the strip; one step per notch or swipe.
+  wheel(e) {
+    const d = Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : e.delta.y;
+    const lines = e.delta_lines?.y ?? 0;
+    const now = Date.now();
+    if (now - (this.wheelAt ?? 0) > 300) this.wheelSum = 0;
+    this.wheelAt = now;
+    this.wheelSum = (this.wheelSum ?? 0) + d;
+    if (Math.abs(lines) < 1 && Math.abs(this.wheelSum) < 40) return;
+    setShared("strip.req", { op: "scroll", d: lines ? -lines : this.wheelSum, n: now + Math.random() });
+    this.wheelSum = 0;
+  }
+
   button(t, id, icon, command, args) {
     return div()
       .id(id)
@@ -55,7 +77,7 @@ export default class Pane extends View {
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        run(command, args);
+        this.act(command, args);
       })
       .child(svg(`mods/kanso-chrome/icons/${icon}.svg`).size(15));
   }
@@ -70,7 +92,11 @@ export default class Pane extends View {
     const pane = p.pane;
     // No background and no rule under it: the header is part of the pane, and
     // only the focused pane's title carries full ink.
-    const on = p.focused;
+    const strip = Boolean(props()?.strip);
+    const on = p.focused || (strip && p.terminal && focused()?.terminal === p.terminal);
+    // Ctrl+drag a header onto another to rearrange the strip (Shift: stack).
+    const drag = strip ? shared("strip.drag") : null;
+    const dropping = Boolean(drag && drag.pane !== pane && this.hovered);
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -78,8 +104,22 @@ export default class Pane extends View {
       .gap(10)
       .items_center()
       .text_size(12.5)
+      .when(dropping, (el) => el.bg(t.foreground + "12"))
+      .when(Boolean(drag) && drag.pane === pane, (el) => el.opacity(0.5))
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
-      .on_click(() => run("pane.focus", { pane }))
+      .when(strip, (el) => el
+        .on_scroll_wheel((e) => this.wheel(e))
+        .on_mouse_down("left", (e) => {
+          if (e.modifiers.control) setShared("strip.drag", { pane, at: Date.now() });
+          else if (shared("strip.drag")) setShared("strip.drag", null); // a drag dropped elsewhere
+        })
+        .on_mouse_up("left", (e) => {
+          const d = shared("strip.drag");
+          if (!d) return;
+          if (d.pane !== pane && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: pane, stack: e.modifiers.shift, n: Date.now() + Math.random() });
+          setShared("strip.drag", null);
+        }))
+      .on_click(() => run("pane.focus", strip && p.terminal ? { terminal: p.terminal } : { pane }))
       .when(Boolean(pic), (el) => el.child(pic.opacity(on ? 1 : 0.75)))
       .child(div().flex_none().truncate().max_w(260).text_size(12.5).when(on, el => el.font_medium()).text_color(on ? t.foreground : t.muted).child(name))
       .when(Boolean(p.cwd), (el) => el.child(this.where(t, folder(p.cwd), null, on)))

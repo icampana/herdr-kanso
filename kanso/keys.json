@@ -1,0 +1,21 @@
+{
+  "layout:kanso": {
+    "cmd-d": "kanso-strip.new-right",
+    "cmd-alt-d": "kanso-strip.new-left",
+    "cmd-shift-d": "kanso-strip.new-down",
+    "cmd-alt-shift-d": "kanso-strip.new-up",
+    "cmd-shift-w": "kanso-strip.close",
+    "cmd-alt-left": "kanso-strip.go-left",
+    "cmd-alt-right": "kanso-strip.go-right",
+    "cmd-alt-up": "kanso-strip.go-up",
+    "cmd-alt-down": "kanso-strip.go-down",
+    "cmd-alt-shift-left": "kanso-strip.move-left",
+    "cmd-alt-shift-right": "kanso-strip.move-right",
+    "cmd-alt-shift-up": "kanso-strip.move-up",
+    "cmd-alt-shift-down": "kanso-strip.move-down",
+    "cmd-shift-enter": "kanso-strip.width",
+    "cmd-alt-enter": "kanso-strip.height",
+    "cmd-alt-,": "kanso-strip.scroll-left",
+    "cmd-alt-.": "kanso-strip.scroll-right"
+  }
+}
