@@ -173,28 +173,32 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 ## Built from
 
 - **Layout tree** (`layouts/kanso.json`), root `row`, `titlebar: "none"`,
-  `traffic_lights: [12, 16]`, `resizable: true`:
+  `traffic_lights: [12, 16]`, `resizable: true`, `terminal_menu: "kanso-menu"`:
   - `sidebar` (column, `chrome`, 256 px, min 200, max 480):
-    - `brand`: an empty column, 48 px, `window_drag`.
-    - `sidebar-lists` holding `spaces` (block `kanso-spaces`).
-    - `sidebar-footer` (block `kanso-chrome` with `{footer: true}`, 156 px).
+    - `brand`: block `kanso-chrome` (draws nothing), 48 px, `window_drag`.
+    - `spaces`: block `kanso-spaces`.
+    - `sidebar-footer`: block `kanso-chrome` with `{footer: true}`, 156 px.
   - `work` (column, padding 6, gap 4):
     - `inset` (`background`, border, radius 10):
       - `tabs`: block `kanso-tabs`, 48 px, `window_drag`.
       - `work-body` (row, `border` background, gap 1):
         - `main`: `{tab: "active"}` with the `kanso-pane` header (height 34)
-          and no pane borders.
-        - `panel`: column 368 px, hidden, holding the stack `panel-body`,
-          which starts with no children.
-    - `status`: block `kanso-status`, 26 px.
+          and no pane borders. `kanso-strip` replaces it with the canvas's
+          columns (`strip-*` nodes) and puts it back for tabs it can't show.
+        - `panel-body`: stack, 368 px (280 to 900), hidden, no children.
+          `kanso-tabs` mounts the open panel in it.
+    - `status-row` (row, 26 px): `status` (`kanso-status` `{side: "left"}`,
+      weight 1), `strip-map` (`kanso-strip`, 180 px), `status-right`
+      (`kanso-status` `{side: "right"}`, weight 1).
 - **Mods**:
   - `kanso-spaces`: spaces, agents (`agents.js`), git per space via `exec`,
     machines via `hc machine ls`.
   - `kanso-tabs`: tabs, panel buttons and the on-demand panel mount via
     `layout.set`.
-  - `kanso-strip`: the strip. The copy in the status row is the controller
-    and minimap; copies with `{filler: true}` paint free space. State per
-    tab lives in shared `strip.state` (`{cols: [{panes, w, h, y}], x}`).
+  - `kanso-strip`: the canvas. The copy in the status row is the controller
+    and minimap; copies with `{filler: true}` paint free space and copies
+    with `{peek, terminal, side, title}` draw a peek (`hc read` every 3 s). State per
+    tab lives in shared `strip.state` (`{cols: [{panes, w}], vx, tx}`).
     Headers talk to it through shared `strip.req` (scroll, move, width),
     `strip.intent` (where the next new pane goes) and `strip.drag`.
   - `kanso-pane`: pane header.
