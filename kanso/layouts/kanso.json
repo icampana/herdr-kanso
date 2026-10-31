@@ -111,7 +111,8 @@
                   },
                   "min": 280,
                   "max": 900,
-                  "hidden": true
+                  "hidden": true,
+                  "background": "background"
                 }
               ],
               "background": "border",

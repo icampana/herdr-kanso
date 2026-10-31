@@ -24,7 +24,7 @@ function specsBadge(space, t) {
 // the open one. Closing removes it from the layout, so Herdr ends that mod
 // (its timers, watches and processes stop); opening adds a fresh copy. Nothing
 // you aren't looking at runs.
-const PANELS = { files: "kanso-files", insights: "insights", changes: "kanso-changes", specs: "sdd-focused" };
+const PANELS = { files: "kanso-files", insights: "token-spend", changes: "kanso-changes", specs: "sdd-focused" };
 
 const TAB_H = 26; // inside the 2px padding of the pill, so the pill is 30px
 const CLEAR = "#00000000";
@@ -53,8 +53,9 @@ export default class Tabs extends View {
   // The node that hides: a "panel" wrapper if the layout has one, else the
   // stack itself (Herdr folds a wrapper with a single child into it).
   openPanel(panel, body) {
-    const box = panel ?? body;
-    return !box || box.hidden ? null : (body?.children?.[0]?.id ?? null);
+    const box = panel ?? body, child = body?.children?.[0];
+    // A panel that hid itself (Specs' close button hides its own block) is closed.
+    return !box || box.hidden || !child || child.hidden ? null : child.id;
   }
 
   // Shows panel `id` (null: closes it) by rewriting the panel stack to hold
@@ -80,7 +81,8 @@ export default class Tabs extends View {
   // (a key, the Specs close button): hidden means unmounted, shown means mounted.
   reconcile(space, panel, body, now) {
     if (!body || this.inFlight(now)) return;
-    const hidden = (panel ?? body).hidden, mounted = (body.children ?? []).length > 0;
+    const child = body.children?.[0];
+    const hidden = (panel ?? body).hidden || Boolean(child?.hidden), mounted = (body.children ?? []).length > 0;
     if (hidden && mounted) this.mount(null);
     else if (!hidden && !mounted) this.mount(this.panels[space?.id] ?? null);
   }
@@ -174,7 +176,7 @@ export default class Tabs extends View {
         .child(button("tab-new", svg("mods/kanso-chrome/icons/plus.svg").size(16), () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 }))))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/kanso-chrome/icons/file.svg")))
       // Insights (costs per model, project and task) opens in the side panel like Files.
-      .when(Boolean(this.installed.insights), el => el.child(panelButton("insights", "Insights", "mods/kanso-chrome/icons/chart.svg")))
+      .when(Boolean(this.installed.insights), el => el.child(panelButton("insights", "Spend", "mods/kanso-chrome/icons/chart.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/kanso-chrome/icons/changes.svg")))
       .when(Boolean(this.installed.specs), el => el.child(panelButton("specs", "Specs", "mods/kanso-chrome/icons/file-text.svg", specsExtra)))
       .when(window()?.buttons, el => el.child(button("minimize", "−", () => run("window.minimize")))
