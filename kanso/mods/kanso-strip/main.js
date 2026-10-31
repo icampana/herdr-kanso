@@ -33,7 +33,6 @@ import { h_flex, v_flex } from "gpui-base";
 import { spaces, panes, focused, layout, run, shared, setShared, theme, nextCommand, props, hc, settings } from "herdr";
 
 const W_STEPS = [1 / 3, 1 / 2, 2 / 3, 1];
-const H_STEPS = [1, 1 / 2];
 const NEW_W = 2 / 3; // a new column: wide enough that its neighbour peeks in
 const EPS = 1e-3;
 const KEY = "strip.state";
@@ -161,7 +160,8 @@ export default class Strip extends View {
     const st = this.state[tab] ?? { cols: [], vx: 0 };
     if (st.vx === undefined) st.vx = 0;
     const ids = new Set(ps.map((p) => p.pane));
-    st.cols = st.cols.map((c) => ({ ...c, panes: c.panes.filter((id) => ids.has(id)) })).filter((c) => c.panes.length);
+    // Horizontal only: one pane per column (older stacked columns are split).
+    st.cols = st.cols.flatMap((c) => c.panes.filter((id) => ids.has(id)).map((id) => ({ panes: [id], w: c.w, h: 1, y: 0 })));
     const known = new Set(st.cols.flatMap((c) => c.panes));
     const fresh = ps.filter((p) => !known.has(p.pane));
     if (fresh.length && !st.cols.length) {
@@ -178,13 +178,9 @@ export default class Strip extends View {
     const intent = shared("strip.intent");
     const usable = intent && intent.at !== this.usedIntent && Date.now() - intent.at < 5000;
     if (usable) this.usedIntent = intent.at;
-    const dir = usable ? intent.dir : "right";
+    const dir = usable ? (intent.dir === "up" ? "left" : intent.dir === "down" ? "right" : intent.dir) : "right";
     const at = this.where(st, usable ? intent.from : st.focus) ?? { ci: st.cols.length - 1, ri: 0 };
-    if (dir === "down" || dir === "up") {
-      st.cols[at.ci].panes.splice(dir === "down" ? at.ri + 1 : at.ri, 0, id);
-    } else {
-      st.cols.splice(dir === "left" ? at.ci : at.ci + 1, 0, { panes: [id], w: NEW_W, h: 1, y: 0 });
-    }
+    st.cols.splice(dir === "left" ? at.ci : at.ci + 1, 0, { panes: [id], w: NEW_W, h: 1, y: 0 });
   }
 
   clampView(st) {
@@ -226,32 +222,21 @@ export default class Strip extends View {
     const split = (dir) => {
       if (!id) return;
       setShared("strip.intent", { dir, from: id, at: Date.now() });
-      run("pane.split", { pane: id, direction: dir === "down" || dir === "up" ? "down" : "right" });
+      run("pane.split", { pane: id, direction: "right" });
     };
     switch (name) {
       case "go-left": if (at) go(at.ci - 1); break;
       case "go-right": if (at) go(at.ci + 1); break;
-      case "go-up": if (at) go(at.ci, at.ri - 1); break;
-      case "go-down": if (at) go(at.ci, at.ri + 1); break;
       case "move-left": case "move-right":
         if (at) {
           const to = at.ci + (name === "move-left" ? -1 : 1);
           if (to >= 0 && to < st.cols.length) { [st.cols[at.ci], st.cols[to]] = [st.cols[to], st.cols[at.ci]]; this.reveal(st, id); }
         }
         break;
-      case "move-up": case "move-down":
-        if (at) {
-          const col = st.cols[at.ci], to = at.ri + (name === "move-up" ? -1 : 1);
-          if (to >= 0 && to < col.panes.length) { [col.panes[at.ri], col.panes[to]] = [col.panes[to], col.panes[at.ri]]; this.reveal(st, id); }
-        }
-        break;
       case "new-right": split("right"); break;
       case "new-left": split("left"); break;
-      case "new-down": split("down"); break;
-      case "new-up": split("up"); break;
       case "close": if (id) run("pane.close", { pane: id }); break;
       case "width": if (at) { st.cols[at.ci].w = step(W_STEPS, st.cols[at.ci].w); this.reveal(st, id); } break;
-      case "height": if (at) { st.cols[at.ci].h = step(H_STEPS, st.cols[at.ci].h); this.reveal(st, id); } break;
       case "scroll-left": this.slide(st, -1 / 3); break;
       case "scroll-right": this.slide(st, 1 / 3); break;
       case "center": if (at) { st.tx = this.start(st, at.ci) + st.cols[at.ci].w / 2 - 0.5; this.clampView(st); this.dirty = true; } break;
@@ -303,20 +288,21 @@ export default class Strip extends View {
       const at = this.where(st, req.pane);
       if (at) { st.cols[at.ci].w = step(W_STEPS, st.cols[at.ci].w); this.reveal(st, req.pane); }
     } else if (req.op === "move") {
-      this.move(st, req.pane, req.to, req.stack);
+      this.move(st, req.pane, req.to);
       this.focusOn(st, req.pane, ps);
     }
   }
 
-  move(st, id, to, stack) {
+  // Ctrl+drag a header onto another: the pane becomes a column beside it, on
+  // the side it came from.
+  move(st, id, to) {
     const from = this.where(st, id), target = this.where(st, to);
     if (!from || !target || id === to) return;
     const width = st.cols[from.ci].w, fromLeft = from.ci < target.ci;
     st.cols[from.ci].panes.splice(from.ri, 1);
     if (!st.cols[from.ci].panes.length) st.cols.splice(from.ci, 1);
     const t = this.where(st, to);
-    if (stack) st.cols[t.ci].panes.splice(t.ri + 1, 0, id);
-    else st.cols.splice(fromLeft ? t.ci + 1 : t.ci, 0, { panes: [id], w: width, h: 1, y: 0 });
+    st.cols.splice(fromLeft ? t.ci + 1 : t.ci, 0, { panes: [id], w: width, h: 1, y: 0 });
   }
 
   // ---- The tree ----------------------------------------------------------------
@@ -435,7 +421,7 @@ export default class Strip extends View {
     const scale = 120 / Math.max(total, 1);
     const at = this.where(st, st.focus);
     return h_flex().id("strip-map").size_full().justify_center().items_center()
-      .tooltip("⌘⌥ arrows or HJKL move · ⌘⌥1-9 column · ⌘D new · ⌘⇧↵ width · scroll to slide")
+      .tooltip("⌘⌥ ← → or H L move · ⌘⌥1-9 column · ⌘D new · ⌘⇧↵ width · scroll to slide")
       .on_scroll_wheel((ev) => this.wheel(ev, st))
       .child(div().relative().w(Math.round(total * scale)).h(12)
         .children(st.cols.map((c, i) => {

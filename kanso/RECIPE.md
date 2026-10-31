@@ -67,8 +67,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       neighbour stays peeking in at the edge. The view slides continuously
       over the row. A column cut by the edge shows that terminal's screen as
       dimmed text clipped at the edge (a "peek"; Herdr can't clip a live
-      terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. A column can stack panes,
-      each full height (or half). A tab holding a mod pane falls back to
+      terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. Horizontal only: one pane
+      per column, always full height. A tab holding a mod pane falls back to
       Herdr's own split view.
       Each pane has a 34-tall header (`kanso-pane`, always shown):
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
@@ -135,16 +135,17 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - Scrolling over the bar moves one tab per mouse-wheel notch, or per
     trackpad swipe (about 40px of travel).
 - **The strip** (keys in `keys.json`, section `layout:kanso`):
-  - Cmd+D opens a pane to the right, Cmd+Alt+D to the left, Cmd+Shift+D below
-    and Cmd+Alt+Shift+D above. The new pane is focused and the view slides to
-    it. The header's split buttons do the same (right, below).
-  - Cmd+Alt+Arrows (or Cmd+Alt+H/J/K/L) move the focus, and the view glides
+  - Cmd+D opens a pane to the right, Cmd+Alt+D to the left. The new pane is
+    focused and the view glides to it. The header's split button does the
+    same. Vertical keys (Cmd+Shift+D, Cmd+Alt+Up/Down) go to the program, so
+    Herdr's own vertical splits never fire here.
+  - Cmd+Alt+Left/Right (or Cmd+Alt+H/L) move the focus, and the view glides
     to it (it eases over about 0.3 s). Cmd+Alt+1-9 jump to a column,
     Cmd+Alt+Home and End to the first and last, Cmd+Alt+C centres the
-    focused one. Cmd+Alt+Shift+Arrows
-    (or H/J/K/L) move the focused column left/right, or the pane up/down in its column.
+    focused one. Cmd+Alt+Shift+Left/Right
+    (or H/L) move the focused column.
   - Cmd+Shift+Enter (or the header's zoom button) cycles the column's width
-    1/3, 1/2, 2/3, 1. Cmd+Alt+Enter cycles the pane height 1, 1/2.
+    1/3, 1/2, 2/3, 1.
   - Cmd+Shift+W closes the focused pane.
   - The wheel or a swipe over any pane header or the minimap slides the view
     continuously (600px of travel per view width) without moving the focus;
@@ -152,9 +153,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     nearest pane still whole. Cmd+Alt+, and Cmd+Alt+. slide a third of the
     view. Clicking a peek or a minimap mark slides to that pane.
   - Ctrl+drag a pane header onto another rearranges: the pane becomes a
-    column beside the target, on the side it came from. With Shift also
-    held, it stacks under the target. The dragged header dims, and the target
-    gets a wash.
+    column beside the target, on the side it came from. The dragged header
+    dims, and the target gets a wash.
 - **Side panels, on demand**:
   - Clicking a panel button rewrites the panel stack to hold only that
     panel's block and shows it. Clicking it again, or closing the panel any
@@ -199,7 +199,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     `strip.intent` (where the next new pane goes) and `strip.drag`.
   - `kanso-pane`: pane header.
   - `kanso-menu`: the terminal right-click menu (root `terminal_menu`):
-    split right, left, down and up through the strip, width, right-clicks
+    split right and left through the strip, width, right-clicks
     to the program, send back, close.
   - `kanso-chrome`: sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
@@ -286,5 +286,4 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - Cmd+Alt+Left past the first column in view slides the view.
   Cmd+Shift+Enter makes the focused column 2/3 wide without changing any
   other column.
-- Ctrl+dragging one header onto another moves that pane beside it, and with
-  Shift it stacks.
+- Ctrl+dragging one header onto another moves that pane beside it.

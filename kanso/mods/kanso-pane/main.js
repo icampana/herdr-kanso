@@ -90,7 +90,7 @@ export default class Pane extends View {
     // only the focused pane's title carries full ink.
     const strip = Boolean(props()?.strip);
     const on = p.focused || (strip && p.terminal && focused()?.terminal === p.terminal);
-    // Ctrl+drag a header onto another to rearrange the strip (Shift: stack).
+    // Ctrl+drag a header onto another to rearrange the strip.
     const drag = strip ? shared("strip.drag") : null;
     const dropping = Boolean(drag && drag.pane !== pane && this.hovered);
     return h_flex()
@@ -112,7 +112,7 @@ export default class Pane extends View {
         .on_mouse_up("left", (e) => {
           const d = shared("strip.drag");
           if (!d) return;
-          if (d.pane !== pane && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: pane, stack: e.modifiers.shift, n: Date.now() + Math.random() });
+          if (d.pane !== pane && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: pane, n: Date.now() + Math.random() });
           setShared("strip.drag", null);
         }))
       .on_click(() => run("pane.focus", strip && p.terminal ? { terminal: p.terminal } : { pane }))
@@ -127,7 +127,7 @@ export default class Pane extends View {
       .when(st === "done" && !this.hovered, el => el.child(div().size(6).flex_none().rounded_full().bg(t.done)))
       .when(this.hovered, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
-        .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
+        .when(!strip, el => el.child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane })))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
   }
