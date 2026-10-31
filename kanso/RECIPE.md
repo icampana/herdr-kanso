@@ -83,10 +83,11 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       `insights`, `kanso-changes` or `sdd-focused`.
   - **Status bar**, 26 tall: `kanso-status` with `{side: "left"}`, a
     180-wide minimap (`kanso-strip`) exactly in the middle, and
-    `kanso-status` with `{side: "right"}`. The minimap draws the whole row
-    to scale in 120px: a 3px `dim` bar per pane (`foreground` for the
-    focused one) and a rounded `muted` frame where the view is. It shows only
-    with more than one pane.
+    `kanso-status` with `{side: "right"}`. The minimap is a centred row of
+    soft pills, one per column (6 + 18 x its share wide, 4 tall, gap 3, no
+    frame): `muted` whole in view, `dim` peeking, `input` off-screen,
+    `foreground` focused. Click a pill to go there. It shows only with more
+    than one column.
     `kanso-status`, text 11.5 `muted`:
     - At the left, the machine (monitor or server icon, "This computer") and
       the branch.

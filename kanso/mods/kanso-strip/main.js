@@ -415,22 +415,23 @@ export default class Strip extends View {
       if (shownNow) { run("pane.focus", { terminal: this.pendingFocus }); this.pendingFocus = null; }
     }
 
-    // Minimap: the whole row to scale, the view as a faint frame over it.
-    const total = this.total(st);
-    if (st.cols.length < 2 && (st.cols[0]?.panes.length ?? 0) < 2) return div();
-    const scale = 120 / Math.max(total, 1);
+    // Minimap: one soft pill per column, as wide as its share of the view, no
+    // frame. Whole in view `muted`, peeking `dim`, off-screen `input`, the
+    // focused one `foreground`. Click a pill to go there; scroll to slide.
+    if (st.cols.length < 2) return div();
     const at = this.where(st, st.focus);
-    return h_flex().id("strip-map").size_full().justify_center().items_center()
-      .tooltip("⌘⌥ ← → or H L move · ⌘⌥1-9 column · ⌘D new · ⌘⇧↵ width · scroll to slide")
+    let x = 0;
+    const pills = st.cols.map((c, i) => {
+      const s0 = x, e0 = x + c.w; x = e0;
+      const seen = Math.min(e0, st.vx + 1) - Math.max(s0, st.vx);
+      const tone = at?.ci === i ? t.foreground : seen >= c.w - EPS ? t.muted : seen > MIN_PEEK ? t.dim : t.input;
+      return div().id(`strip-mark-${i}`).h(14).px(1).flex_none().flex().items_center().cursor_pointer()
+        .on_click(() => { this.focusOn(st, c.panes[0], ps); this.dirty = true; })
+        .child(div().w(Math.round(6 + c.w * 18)).h(4).rounded_full().bg(tone));
+    });
+    return h_flex().id("strip-map").size_full().gap(3).justify_center().items_center()
+      .tooltip("⌘⌥ ← → move · ⌘⌥1-9 column · ⌘D new · ⌘⇧↵ width · scroll to slide")
       .on_scroll_wheel((ev) => this.wheel(ev, st))
-      .child(div().relative().w(Math.round(total * scale)).h(12)
-        .children(st.cols.map((c, i) => {
-          const left = Math.round(this.start(st, i) * scale), w = Math.max(3, Math.round(c.w * scale) - 3);
-          return v_flex().id(`strip-mark-${i}`).absolute().left(left).top(0).w(w).h(12).gap(2).justify_center().cursor_pointer()
-            .on_click(() => { this.focusOn(st, c.panes[c.y ?? 0], ps); this.dirty = true; })
-            .children(c.panes.map((id, r) => div().id(`strip-cell-${id}`).h(3).w_full().rounded_full()
-              .bg(at?.ci === i && at?.ri === r ? t.foreground : t.dim)));
-        }))
-        .child(div().absolute().top(-2).h(16).left(Math.round(st.vx * scale) - 2).w(Math.round(scale) + 1).rounded(4).border(1).border_color(t.muted)));
+      .children(pills);
   }
 }
