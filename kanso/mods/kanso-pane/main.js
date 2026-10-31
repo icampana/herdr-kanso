@@ -55,17 +55,13 @@ export default class Pane extends View {
     run(command, args);
   }
 
-  // Wheel over a header slides the strip; one step per notch or swipe.
+  // Wheel or swipe over a header slides the canvas continuously (600px of
+  // travel = one view width; a mouse notch = 40px).
   wheel(e) {
-    const d = Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : e.delta.y;
     const lines = e.delta_lines?.y ?? 0;
-    const now = Date.now();
-    if (now - (this.wheelAt ?? 0) > 300) this.wheelSum = 0;
-    this.wheelAt = now;
-    this.wheelSum = (this.wheelSum ?? 0) + d;
-    if (Math.abs(lines) < 1 && Math.abs(this.wheelSum) < 40) return;
-    setShared("strip.req", { op: "scroll", d: lines ? -lines : this.wheelSum, n: now + Math.random() });
-    this.wheelSum = 0;
+    const d = lines ? -lines * 40 : (Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : -e.delta.y);
+    if (!d) return;
+    setShared("strip.req", { op: "scroll", d: d / 600, n: Date.now() + Math.random() });
   }
 
   button(t, id, icon, command, args) {

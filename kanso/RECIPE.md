@@ -61,14 +61,15 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         Specs. They are ghost buttons 26 tall (icon 15, text 12) with a wash
         when their panel is open. Insights and Specs show only when their
         mods are installed.
-    - **Panes**: an endless strip (`kanso-strip`). Panes sit in columns,
-      each a share of the view wide (1/3, 1/2, 2/3 or all of it; new ones
-      1/2), with 1px `border` gaps and no frames. Only the columns that fit
-      are drawn; the others are off to the left or right, still running.
-      What doesn't fill the view stays empty `background`, so a column never
-      grows to fill it. A column can stack panes, each the full height (or
-      half), and scrolls up and down the same way. A tab holding a mod pane
-      falls back to Herdr's own split view.
+    - **Panes**: an endless canvas (`kanso-strip`). Panes sit side by side
+      in columns, each a share of the view wide (1/3, 1/2, 2/3 or all of it).
+      A lone pane fills the view; a new one arrives at 2/3, so its
+      neighbour stays peeking in at the edge. The view slides continuously
+      over the row. A column cut by the edge shows that terminal's screen as
+      dimmed text clipped at the edge (a "peek"; Herdr can't clip a live
+      terminal). Off-screen columns aren't drawn. A column can stack panes,
+      each full height (or half). A tab holding a mod pane falls back to
+      Herdr's own split view.
       Each pane has a 34-tall header (`kanso-pane`, always shown):
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
         `foreground` and medium weight when focused, `muted` otherwise.
@@ -82,10 +83,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       `insights`, `kanso-changes` or `sdd-focused`.
   - **Status bar**, 26 tall: `kanso-status` with `{side: "left"}`, a
     180-wide minimap (`kanso-strip`) exactly in the middle, and
-    `kanso-status` with `{side: "right"}`. The minimap is a centred row of
-    pills, one per column (6 + 18 x its share wide, gap 4), with a 3px bar
-    per pane stacked in it: `input` off-screen, `dim` in view, `foreground`
-    for the focused pane. It shows only with more than one pane.
+    `kanso-status` with `{side: "right"}`. The minimap draws the whole row
+    to scale in 120px: a 3px `dim` bar per pane (`foreground` for the
+    focused one) and a rounded `muted` frame where the view is. It shows only
+    with more than one pane.
     `kanso-status`, text 11.5 `muted`:
     - At the left, the machine (monitor or server icon, "This computer") and
       the branch.
@@ -143,8 +144,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     1/3, 1/2, 2/3, 1. Cmd+Alt+Enter cycles the pane height 1, 1/2.
   - Cmd+Shift+W closes the focused pane.
   - The wheel or a swipe over any pane header or the minimap slides the view
-    one column without moving the focus. Cmd+Alt+, and Cmd+Alt+. do the same
-    from the keyboard. Clicking a minimap mark focuses that column.
+    continuously (600px of travel per view width) without moving the focus;
+    if the focused pane slides out of full view, the keyboard moves to the
+    nearest pane still whole. Cmd+Alt+, and Cmd+Alt+. slide a third of the
+    view. Clicking a peek or a minimap mark slides to that pane.
   - Ctrl+drag a pane header onto another rearranges: the pane becomes a
     column beside the target, on the side it came from. With Shift also
     held, it stacks under the target. The dragged header dims, and the target
