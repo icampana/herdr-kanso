@@ -384,7 +384,7 @@ export default class Spaces extends View {
         this.pressed = null;
         if (from !== null && from !== i) run("space.move", { id: spaces()[from].id, index: i + 1 });
         else {
-          // Like Claude desktop's projects: the row itself folds. Arriving at a
+          // Like a desktop app's project list: the row itself folds. Arriving at a
           // space opens it; clicking the space you're in folds or opens it.
           if (mine.length) this.setAgentsFolded(w.id, on ? !this.agentsFolded.has(w.id) : false);
           if (!on) run("space.select", { id: w.id });
