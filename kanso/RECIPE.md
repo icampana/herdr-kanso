@@ -192,6 +192,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     Headers talk to it through shared `strip.req` (scroll, move, width),
     `strip.intent` (where the next new pane goes) and `strip.drag`.
   - `kanso-pane`: pane header.
+  - `kanso-menu`: the terminal right-click menu (root `terminal_menu`):
+    split right, left, down and up through the strip, width, right-clicks
+    to the program, send back, close.
   - `kanso-chrome`: sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
   - `kanso-files`: lazy file tree via `sh`, git status marks.
@@ -227,6 +230,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   and implicit pane commands fail. Pass `pane` or `terminal` explicitly
   (`pane.split {pane}`, `pane.focus {terminal}`), and focus a new pane only
   once its block is in the layout.
+- Herdr's own terminal menu passes a terminal block's id (`term-<pane>`) as
+  its target pane, so its Split and Close fail with "no pane". Kanso ships
+  its own menu, which finds the real pane from the clicked terminal.
 - Cap layout writes: the strip writes only when its tree changes, and pauses
   itself for 10 s after 6 writes in 3 s, so a mistake can't keep the window
   busy.

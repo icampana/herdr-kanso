@@ -194,5 +194,6 @@
     12,
     16
   ],
-  "preview": "layouts/kanso.png"
+  "preview": "layouts/kanso.png",
+  "terminal_menu": "kanso-menu"
 }
