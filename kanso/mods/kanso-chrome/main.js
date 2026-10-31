@@ -1,0 +1,50 @@
+// Derived from the `workspace-chrome` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
+// Modified by 0OZ: brand bar, solid sidebar footer with Settings, Add machine and an account chip.
+// Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-chrome.
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-chrome; sidebar footer as centred squares when collapsed, one icon set (icons/), the top bar left empty.
+import { View, div, svg } from "gpui-kit";
+import { h_flex, v_flex } from "gpui-base";
+import { theme, run, props, shared, updates, agents, home } from "herdr";
+
+const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
+
+export default class WorkspaceChrome extends View {
+  render() {
+    const t = theme();
+    const collapsed = shared("sidebar.collapsed") === true;
+    if (props()?.footer) {
+      // Secondary nav (Settings, Add machine), then the account chip, as in shadcn's dashboard-01.
+      // Collapsed, every item is a centred square with its label as a tooltip.
+      const row = (id, icon, label, action) => h_flex().id(id).relative().h(34).flex_none().items_center().rounded(8)
+        .text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground)).cursor_pointer()
+        .on_click(action).child(svg(icon).size(17).flex_none())
+        .when(collapsed, el => el.w(34).justify_center().tooltip(label))
+        .when(!collapsed, el => el.px(10).gap(10).child(div().flex_1().child(label)));
+      const dot = () => div().size(6).rounded_full().bg(t.accent).flex_none();
+      const who = basename(home()) || "me";
+      const n = agents().length;
+      const count = `${n} ${n === 1 ? "agent" : "agents"}`;
+      const avatar = div().size(collapsed ? 28 : 32).flex_none().rounded(8).bg(t.selected).flex().items_center().justify_center()
+        .font_semibold().text_size(13).text_color(t.foreground).child(who[0].toUpperCase());
+      const chip = h_flex().id("account").h(collapsed ? 40 : 48).flex_none().items_center().rounded(8).cursor_pointer()
+        .hover(s => s.bg(t.hover)).on_click(() => run("app.settings")).child(avatar)
+        .when(collapsed, el => el.w(40).justify_center().tooltip(`${who} · ${count}`))
+        .when(!collapsed, el => el.px(8).gap(10).child(v_flex().flex_1().min_w(0)
+          .child(div().truncate().text_size(13).font_medium().text_color(t.foreground).child(who))
+          .child(div().truncate().text_size(11.5).text_color(t.muted).child(count))));
+      const ready = Boolean(updates().app.ready);
+      return v_flex().size_full().bg(t.chrome).px(collapsed ? 0 : 8).pt(8).pb(12).gap(2).text_size(13).justify_end()
+        .when(collapsed, el => el.items_center())
+        .child(row("settings", "mods/kanso-chrome/icons/settings.svg", ready ? "Settings · update ready" : "Settings", () => run("app.settings"))
+          .when(ready && !collapsed, el => el.child(dot()))
+          .when(ready && collapsed, el => el.child(dot().absolute().top(6).right(6))))
+        // A server, not a second "+": the rail already has one for New space.
+        .child(row("machine", "mods/kanso-chrome/icons/server.svg", "Add machine", () => run("mod.open", { name: "machine-add" })))
+        .child(div().h(1).my(4).flex_none().bg(t.border).when(collapsed, el => el.w(28)).when(!collapsed, el => el.mx(2)))
+        .child(chip);
+    }
+    // Zen: the top bar is empty. It only holds the traffic lights and lets you
+    // drag the window; the actions live one row lower.
+    return div().size_full().bg(t.chrome);
+  }
+}

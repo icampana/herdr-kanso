@@ -1,0 +1,172 @@
+{
+  "id": "root",
+  "type": "row",
+  "children": [
+    {
+      "id": "sidebar",
+      "type": "column",
+      "children": [
+        {
+          "id": "brand",
+          "type": "column",
+          "children": [],
+          "size": {
+            "px": 48
+          },
+          "window_drag": true
+        },
+        {
+          "id": "sidebar-lists",
+          "type": "column",
+          "children": [
+            {
+              "id": "spaces",
+              "type": "block",
+              "content": {
+                "mod": "kanso-spaces"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 90
+            }
+          ]
+        },
+        {
+          "id": "sidebar-footer",
+          "type": "block",
+          "content": {
+            "mod": "kanso-chrome",
+            "props": {
+              "footer": true
+            }
+          },
+          "size": {
+            "px": 156
+          }
+        }
+      ],
+      "size": {
+        "px": 256
+      },
+      "min": 200,
+      "max": 480,
+      "background": "chrome",
+      "resizable": false
+    },
+    {
+      "id": "work",
+      "type": "column",
+      "children": [
+        {
+          "id": "inset",
+          "type": "column",
+          "children": [
+            {
+              "id": "tabs",
+              "type": "block",
+              "content": {
+                "mod": "kanso-tabs"
+              },
+              "size": {
+                "px": 48
+              },
+              "window_drag": true
+            },
+            {
+              "id": "work-body",
+              "type": "row",
+              "children": [
+                {
+                  "id": "main",
+                  "type": "block",
+                  "content": {
+                    "tab": "active",
+                    "pane": {
+                      "header": {
+                        "content": {
+                          "mod": "kanso-pane"
+                        },
+                        "reveal": "always",
+                        "height": 34,
+                        "position": "top"
+                      },
+                      "background": "background",
+                      "border": {
+                        "width": 0,
+                        "color": "border"
+                      },
+                      "focus": {
+                        "width": 0,
+                        "color": "border"
+                      },
+                      "radius": 0,
+                      "gap": 1
+                    }
+                  },
+                  "background": "border"
+                },
+                {
+                  "id": "panel",
+                  "type": "column",
+                  "children": [
+                    {
+                      "id": "panel-body",
+                      "type": "stack",
+                      "children": []
+                    }
+                  ],
+                  "size": {
+                    "px": 368
+                  },
+                  "min": 280,
+                  "max": 900,
+                  "hidden": true
+                }
+              ],
+              "background": "border",
+              "padding": 0,
+              "gap": 1
+            }
+          ],
+          "background": "background",
+          "border": {
+            "width": 1,
+            "color": "border"
+          },
+          "radius": 10,
+          "resizable": false
+        },
+        {
+          "id": "status",
+          "type": "block",
+          "content": {
+            "mod": "kanso-status"
+          },
+          "size": {
+            "px": 26
+          }
+        }
+      ],
+      "padding": 6,
+      "gap": 4,
+      "resizable": false
+    }
+  ],
+  "background": "chrome",
+  "theme": {
+    "light": "kanso-day",
+    "dark": "kanso"
+  },
+  "terminal_padding": [
+    14,
+    10
+  ],
+  "resizable": true,
+  "titlebar": "none",
+  "traffic_lights": [
+    12,
+    16
+  ],
+  "preview": "layouts/kanso.png"
+}
