@@ -139,7 +139,13 @@
               "id": "status",
               "type": "block",
               "content": {
-                "mod": "kanso-status"
+                "mod": "kanso-status",
+                "props": {
+                  "side": "left"
+                }
+              },
+              "size": {
+                "weight": 1
               }
             },
             {
@@ -149,7 +155,20 @@
                 "mod": "kanso-strip"
               },
               "size": {
-                "px": 240
+                "px": 180
+              }
+            },
+            {
+              "id": "status-right",
+              "type": "block",
+              "content": {
+                "mod": "kanso-status",
+                "props": {
+                  "side": "right"
+                }
+              },
+              "size": {
+                "weight": 1
               }
             }
           ]

@@ -80,11 +80,13 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     - **Side panel**, at the right of the panes: 368 wide (280 to 900),
       hidden by default. It holds whichever panel is open: `kanso-files`,
       `insights`, `kanso-changes` or `sdd-focused`.
-  - **Status bar**, 26 tall: `kanso-status`, then a 240-wide minimap
-    (`kanso-strip`): one mark per column (width by its share, split per
-    pane), `input` off-screen, `muted` in view, `foreground` for the focused
-    pane. It shows only with more than one pane. `kanso-status`, text 11.5
-    `muted`:
+  - **Status bar**, 26 tall: `kanso-status` with `{side: "left"}`, a
+    180-wide minimap (`kanso-strip`) exactly in the middle, and
+    `kanso-status` with `{side: "right"}`. The minimap is a centred row of
+    pills, one per column (6 + 18 x its share wide, gap 4), with a 3px bar
+    per pane stacked in it: `input` off-screen, `dim` in view, `foreground`
+    for the focused pane. It shows only with more than one pane.
+    `kanso-status`, text 11.5 `muted`:
     - At the left, the machine (monitor or server icon, "This computer") and
       the branch.
     - At the right, "N agent(s) need you" in `blocked` with a dot (only when

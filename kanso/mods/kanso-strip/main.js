@@ -172,7 +172,8 @@ export default class Strip extends View {
     const st = tab && this.state[tab];
     if (!st) return;
     const ps = panes().filter((p) => p.tab === tab);
-    const id = this.focusPane(ps) ?? st.focus;
+    // The pane with the keyboard; else the one last focused; else the first in view.
+    const id = this.focusPane(ps) ?? (ps.some((p) => p.pane === st.focus) ? st.focus : null) ?? st.cols[this.inView(st)[0]]?.panes[0] ?? null;
     const at = id && this.where(st, id);
     const go = (ci, ri) => {
       const col = st.cols[ci];
@@ -350,7 +351,10 @@ export default class Strip extends View {
     if (st.cols.length < 2 && (st.cols[0]?.panes.length ?? 0) < 2) return div();
     const [s, e] = this.inView(st);
     const at = this.where(st, st.focus);
-    return h_flex().id("strip-map").h_full().px(10).gap(3).items_center()
+    // A quiet row of pills, centred: one per column, as wide as its share,
+    // a 3px bar per pane stacked in it. Off-screen `input`, in view `dim`,
+    // the focused pane `foreground`.
+    return h_flex().id("strip-map").size_full().gap(4).items_center().justify_center()
       .on_scroll_wheel((ev) => {
         const d = Math.abs(ev.delta.x) > Math.abs(ev.delta.y) ? -ev.delta.x : ev.delta.y;
         const now2 = Date.now();
@@ -362,11 +366,14 @@ export default class Strip extends View {
       })
       .children(st.cols.map((c, i) => {
         const visible = i >= s && i < e, focus = at?.ci === i;
-        return v_flex().id(`strip-mark-${i}`).w(Math.round(8 + c.w * 30)).h(12).gap(1).flex_none().cursor_pointer()
+        return v_flex().id(`strip-mark-${i}`).w(Math.round(6 + c.w * 18)).py(4).gap(2).flex_none().justify_center().cursor_pointer()
           .tooltip(`${c.panes.length} ${c.panes.length === 1 ? "pane" : "panes"}`)
           .on_click(() => this.focusOn(st, c.panes[c.y ?? 0], ps))
-          .children(c.panes.map((id, r) => div().id(`strip-cell-${id}`).flex_1().rounded(2)
-            .bg(focus && at?.ri === r ? t.foreground : visible && r >= (c.y ?? 0) && r < (c.y ?? 0) + rows(c) ? t.muted : t.input)));
+          .children(c.panes.map((id, r) => {
+            const inView = visible && r >= (c.y ?? 0) && r < (c.y ?? 0) + rows(c);
+            return div().id(`strip-cell-${id}`).h(3).w_full().rounded_full()
+              .bg(focus && at?.ri === r ? t.foreground : inView ? t.dim : t.input);
+          }));
       }));
   }
 }
