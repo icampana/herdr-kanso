@@ -21,6 +21,7 @@ the view holds at once, 1 to 8.
 | Drag the thin handle at a header's right edge | Resize that pane; the others reflow |
 | Drag the six-dot grip onto another pane | Move it before or after that pane |
 | Wheel over a header or the minimap | Slide the view |
+| Cmd+Shift+O | Open the pane's folder in a code editor |
 
 ![Kanso](kanso/preview.png)
 
@@ -33,7 +34,7 @@ clone of this repo:
 cp kanso/layouts/kanso.json ~/.config/herdr-app/layouts/
 cp kanso/layouts/kanso.png  ~/.config/herdr-app/layouts/
 cp kanso/themes/*.json      ~/.config/herdr-app/themes/
-cp -R kanso/mods/kanso-*    ~/.config/herdr-app/mods/
+cp -R kanso/mods/kanso-* kanso/mods/open-with ~/.config/herdr-app/mods/
 # then add the "layout:kanso" section (it also keeps Cmd+Alt+arrows and Cmd+Alt+H/L as alternatives) of kanso/keys.json to ~/.config/herdr-app/keys.json
 herdr-app do layout.switch --name kanso
 ```
@@ -46,6 +47,15 @@ removes Kanso.
 The mods run `git` (the spaces list, Files, Changes), `sh` (the Files listing)
 and `hc machine ls` (machines). They read files only inside the folders you
 work in. Nothing reaches the network.
+
+Open with (`open-with`: Cmd+Shift+O, the pane header's open button, or
+"Open with…" in the right-click menu) lists the code editors installed on this
+computer (Cursor, VS Code, Windsurf, Zed, Sublime Text, JetBrains IDEs, Xcode
+and others; Neovim, Helix and Vim open in a split) and opens the pane's folder
+in the one you pick. To find them it runs `sh` (app folders, `command -v`,
+`flatpak`); on macOS it opens the editor with `open -a` and saves each app's
+icon as a PNG with `plutil` and `sips` under
+`~/.config/herdr-app/data/open-with/`.
 
 Specs (`sdd-focused`, from the minimalistic layout) and Insights are optional:
 install either mod and its button appears in the tab bar.

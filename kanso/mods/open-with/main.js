@@ -1,0 +1,283 @@
+// Open with: opens the focused pane's folder in a code editor installed on
+// this computer. Detects the editors on open (app bundles on macOS, CLIs on
+// PATH, Flatpak on Linux), lists the last one used first, Enter opens it,
+// 1-9 picks directly, Esc leaves. Terminal editors (Neovim, Helix, ...) open
+// in a split beside the pane. A folder on another machine opens over SSH in
+// the editors that support it (VS Code family, Zed).
+//
+// Bound to cmd-shift-o (`mod.open:open-with`). Other mods can open it for a
+// given folder: openOverlay({ mod: "open-with", kind: "popup", at: "top",
+// width: 380, props: { folder, machine } }).
+
+import { View, div, svg, image } from "gpui-kit";
+import { h_flex, v_flex } from "gpui-base";
+import { exec, run, notify, theme, props, closeOverlay, focused, panes, spaces, home, appHome, shared, setShared, window as win } from "herdr";
+
+const MOD = "open-with";
+const RECENT = `${MOD}.recent`;
+const FOUND = `${MOD}.found`;
+const ICONS = `data/${MOD}/icons`;
+
+// Catalog order is the order shown before anything was used.
+// mac: app bundle names; cli: commands on PATH; flatpak: Flatpak app ids;
+// family: how a remote (SSH) folder opens; bin: the CLI inside the macOS bundle.
+const VSC = "Contents/Resources/app/bin/";
+const EDITORS = [
+  { id: "cursor", name: "Cursor", mac: ["Cursor.app"], cli: ["cursor"], family: "vscode", bin: VSC + "cursor", icon: "icons/cursor.svg" },
+  { id: "vscode", name: "VS Code", mac: ["Visual Studio Code.app"], cli: ["code"], flatpak: ["com.visualstudio.code"], family: "vscode", bin: VSC + "code" },
+  { id: "vscode-insiders", name: "VS Code Insiders", mac: ["Visual Studio Code - Insiders.app"], cli: ["code-insiders"], family: "vscode", bin: VSC + "code-insiders" },
+  { id: "windsurf", name: "Windsurf", mac: ["Windsurf.app"], cli: ["windsurf"], family: "vscode", bin: VSC + "windsurf" },
+  { id: "antigravity", name: "Antigravity", mac: ["Antigravity.app"], cli: ["antigravity", "agy"], family: "vscode", bin: VSC + "antigravity", icon: "icons/antigravity.svg" },
+  { id: "kiro", name: "Kiro", mac: ["Kiro.app"], cli: ["kiro"], family: "vscode", bin: VSC + "kiro", icon: "icons/kiro.svg" },
+  { id: "trae", name: "Trae", mac: ["Trae.app"], cli: ["trae"], family: "vscode", bin: VSC + "trae" },
+  { id: "vscodium", name: "VSCodium", mac: ["VSCodium.app"], cli: ["codium"], flatpak: ["com.vscodium.codium"], family: "vscode", bin: VSC + "codium" },
+  { id: "positron", name: "Positron", mac: ["Positron.app"], cli: ["positron"] },
+  { id: "zed", name: "Zed", mac: ["Zed.app", "Zed Preview.app"], cli: ["zed", "zeditor"], flatpak: ["dev.zed.Zed"], family: "zed", bin: "Contents/MacOS/cli" },
+  { id: "sublime", name: "Sublime Text", mac: ["Sublime Text.app"], cli: ["subl"], flatpak: ["com.sublimetext.three"] },
+  { id: "idea", name: "IntelliJ IDEA", mac: ["IntelliJ IDEA.app", "IntelliJ IDEA Ultimate.app", "IntelliJ IDEA CE.app"], cli: ["idea", "intellij-idea-ultimate", "intellij-idea-community"] },
+  { id: "webstorm", name: "WebStorm", mac: ["WebStorm.app"], cli: ["webstorm"] },
+  { id: "pycharm", name: "PyCharm", mac: ["PyCharm.app", "PyCharm Professional Edition.app", "PyCharm CE.app"], cli: ["pycharm", "pycharm-professional", "pycharm-community"] },
+  { id: "goland", name: "GoLand", mac: ["GoLand.app"], cli: ["goland"] },
+  { id: "phpstorm", name: "PhpStorm", mac: ["PhpStorm.app"], cli: ["phpstorm"] },
+  { id: "rubymine", name: "RubyMine", mac: ["RubyMine.app"], cli: ["rubymine"] },
+  { id: "rustrover", name: "RustRover", mac: ["RustRover.app"], cli: ["rustrover"] },
+  { id: "clion", name: "CLion", mac: ["CLion.app"], cli: ["clion"] },
+  { id: "rider", name: "Rider", mac: ["Rider.app"], cli: ["rider"] },
+  { id: "fleet", name: "Fleet", mac: ["Fleet.app"], cli: ["fleet"] },
+  { id: "nova", name: "Nova", mac: ["Nova.app"], cli: ["nova"] },
+  { id: "bbedit", name: "BBEdit", mac: ["BBEdit.app"], cli: ["bbedit"] },
+  { id: "textmate", name: "TextMate", mac: ["TextMate.app"], cli: ["mate"] },
+  { id: "xcode", name: "Xcode", mac: ["Xcode.app"] },
+  { id: "nvim", name: "Neovim", cli: ["nvim"], tui: true, icon: "icons/nvim.svg" },
+  { id: "hx", name: "Helix", cli: ["hx", "helix"], tui: true, icon: "icons/hx.svg" },
+  { id: "vim", name: "Vim", cli: ["vim"], tui: true, icon: "icons/vim.svg" },
+];
+const BY_ID = Object.fromEntries(EDITORS.map((e) => [e.id, e]));
+const TILES = ["#5b8def", "#22a99a", "#8b7cf6", "#e3814f", "#3fae6a", "#d9649a"];
+
+// One shell pass: prints `app|cli|flatpak <tab> key <tab> path` per hit.
+const DETECT = `
+for a in "$@"; do
+  case "$a" in
+    app:*) n=\${a#app:}
+      for d in /Applications "$HOME/Applications" /Applications/Setapp "$HOME/Applications/JetBrains Toolbox"; do
+        if [ -d "$d/$n" ]; then printf 'app\\t%s\\t%s\\n' "$n" "$d/$n"; break; fi
+      done;;
+    cli:*) n=\${a#cli:}
+      p=$(command -v "$n" 2>/dev/null) && case "$p" in /*) printf 'cli\\t%s\\t%s\\n' "$n" "$p";; esac;;
+  esac
+done
+if command -v flatpak >/dev/null 2>&1; then
+  flatpak list --app --columns=application 2>/dev/null | awk '{ printf "flatpak\\t%s\\t\\n", $1 }'
+fi`;
+
+// macOS: each app's own icon as a 64 px PNG, made once.
+const ICON = `
+out=$1; shift; mkdir -p "$out"
+while [ $# -gt 1 ]; do
+  id=$1; app=$2; shift 2
+  [ -f "$out/$id.png" ] && continue
+  f=$(plutil -extract CFBundleIconFile raw "$app/Contents/Info.plist" 2>/dev/null) || continue
+  case "$f" in *.icns) ;; *) f="$f.icns";; esac
+  [ -f "$app/Contents/Resources/$f" ] && sips -s format png -Z 64 "$app/Contents/Resources/$f" --out "$out/$id.png" >/dev/null 2>&1
+done
+exit 0`;
+
+// Starts a GUI program and returns at once (Linux CLIs may stay attached).
+const DETACH = `if command -v setsid >/dev/null 2>&1; then setsid -f "$@" >/dev/null 2>&1; else nohup "$@" >/dev/null 2>&1 & fi`;
+
+async function detect(platform) {
+  const found = {};
+  const add = (id, how) => { if (!found[id]) found[id] = how; };
+  if (platform === "windows") {
+    const tries = EDITORS.flatMap((e) => (e.cli ?? []).map((c) => [e, c]));
+    const hits = await Promise.all(tries.map(([e, c]) =>
+      exec("where", [c]).then((r) => (r.code === 0 ? [e, r.stdout.split(/\r?\n/)[0].trim()] : null)).catch(() => null)));
+    for (const h of hits) if (h) add(h[0].id, { cli: h[1] });
+    return found;
+  }
+  const args = [];
+  for (const e of EDITORS) {
+    if (platform === "macos") for (const m of e.mac ?? []) args.push(`app:${m}`);
+    for (const c of e.cli ?? []) args.push(`cli:${c}`);
+  }
+  const r = await exec("sh", ["-c", DETECT, "sh", ...args]);
+  const hits = r.stdout.split("\n").filter(Boolean).map((l) => l.split("\t"));
+  for (const e of EDITORS) {
+    const app = hits.find(([k, n]) => k === "app" && e.mac?.includes(n));
+    const cli = hits.find(([k, n]) => k === "cli" && e.cli?.includes(n));
+    const fp = hits.find(([k, n]) => k === "flatpak" && e.flatpak?.includes(n));
+    if (app || cli || fp) found[e.id] = { app: app?.[2], cli: cli?.[2], flatpak: fp?.[1] };
+  }
+  return found;
+}
+
+function shortPath(folder, machine) {
+  const h = home();
+  if (!machine && folder.startsWith(h)) return "~" + folder.slice(h.length);
+  return folder;
+}
+
+export default class OpenWith extends View {
+  init(_props, cx) {
+    this.platform = win()?.platform ?? "macos";
+    this.found = shared(FOUND) ?? null;
+    this.at = 0;
+    this.icons = {};
+    this.handle = cx.focus_handle();
+    this.handle.focus();
+    this.target = this.resolveTarget();
+    cx.spawn(async (cx) => {
+      try {
+        this.found = await detect(this.platform);
+        setShared(FOUND, this.found);
+      } catch (err) {
+        this.error = String(err?.message ?? err);
+      }
+      cx.notify();
+      if (this.platform === "macos") await this.loadIcons();
+      cx.notify();
+    });
+  }
+
+  resolveTarget() {
+    const p = props() ?? {};
+    if (p.folder) return { folder: p.folder, machine: p.machine ?? null };
+    const f = focused();
+    const space = spaces().find((s) => s.id === f?.space) ?? spaces().find((s) => s.active);
+    const pane = panes().find((x) => x.focused);
+    const folder = f?.cwd || pane?.cwd || space?.folder || home();
+    return { folder, machine: space?.machine ?? null };
+  }
+
+  async loadIcons() {
+    const pairs = Object.entries(this.found ?? {}).filter(([, how]) => how.app).flatMap(([id, how]) => [id, how.app]);
+    if (pairs.length) {
+      try { await exec("sh", ["-c", ICON, "sh", `${appHome()}/${ICONS}`, ...pairs]); } catch {}
+    }
+    for (const [id] of Object.entries(this.found ?? {})) {
+      try {
+        const r = await exec("test", ["-f", `${appHome()}/${ICONS}/${id}.png`]);
+        if (r.code === 0) this.icons[id] = `${ICONS}/${id}.png`;
+      } catch {}
+    }
+  }
+
+  // Detected editors, last used first, then catalog order; GUI before terminal.
+  list() {
+    const recent = (shared(RECENT) ?? []).filter((id) => BY_ID[id]);
+    const have = EDITORS.filter((e) => this.found?.[e.id]);
+    const rank = (e) => { const i = recent.indexOf(e.id); return i < 0 ? 1000 + EDITORS.indexOf(e) : i; };
+    const gui = have.filter((e) => !e.tui).sort((a, b) => rank(a) - rank(b));
+    const tui = have.filter((e) => e.tui).sort((a, b) => rank(a) - rank(b));
+    return [...gui, ...tui];
+  }
+
+  canOpen(e) {
+    if (!this.target.machine) return true;
+    return e.tui || e.family === "vscode" || e.family === "zed";
+  }
+
+  close() {
+    closeOverlay(props().overlay);
+  }
+
+  async open(e) {
+    if (!e || !this.canOpen(e)) return;
+    const how = this.found[e.id];
+    const { folder, machine } = this.target;
+    this.close();
+    setShared(RECENT, [e.id, ...(shared(RECENT) ?? []).filter((x) => x !== e.id)].slice(0, 12));
+    if (e.tui) {
+      // A path found here means nothing on another machine: run it by name there.
+      run("terminal.open", { argv: [machine || !how.cli ? e.cli[0] : how.cli, "."], folder, place: "right" });
+      return;
+    }
+    try {
+      const r = await this.launch(e, how, folder, machine);
+      if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || `exit ${r.code}`);
+    } catch (err) {
+      notify({ title: `Could not open ${e.name}`, body: String(err?.message ?? err).slice(0, 300), level: "error" });
+    }
+  }
+
+  launch(e, how, folder, machine) {
+    const cli = how.cli ?? (how.app && e.bin ? `${how.app}/${e.bin}` : null);
+    if (machine) {
+      if (!cli) throw new Error(`${e.name} has no command line to open a folder on ${machine}`);
+      const args = e.family === "zed" ? [`ssh://${machine}${folder.startsWith("/") ? "" : "/"}${folder}`] : ["--remote", `ssh-remote+${machine}`, folder];
+      return this.spawn(cli, args);
+    }
+    if (this.platform === "macos" && how.app) return exec("open", ["-a", how.app, folder]);
+    if (how.flatpak && !how.cli) return exec("sh", ["-c", DETACH, "sh", "flatpak", "run", how.flatpak, folder]);
+    return this.spawn(cli, [folder]);
+  }
+
+  spawn(cli, args) {
+    if (this.platform === "windows") return exec("cmd", ["/c", cli, ...args]);
+    return exec("sh", ["-c", DETACH, "sh", cli, ...args]);
+  }
+
+  glyph(e, t) {
+    if (this.icons[e.id]) return image(this.icons[e.id]).size(18).flex_none();
+    if (e.icon) return div().size(18).flex_none().items_center().justify_center().flex().child(svg(e.icon).size(15).text_color(t.foreground));
+    const c = TILES[EDITORS.indexOf(e) % TILES.length];
+    return div().size(18).flex_none().rounded(5).bg(c).flex().items_center().justify_center()
+      .text_size(10.5).font_bold().text_color("#ffffff").child(e.name[0]);
+  }
+
+  row(e, i, sel, t) {
+    const ok = this.canOpen(e);
+    const recent = (shared(RECENT) ?? [])[0] === e.id;
+    const hint = !ok ? "local only" : e.tui ? "split" : recent ? "last used" : "";
+    return h_flex().id(`ow-${e.id}`).h(32).px(9).gap(10).rounded(7).items_center().flex_none()
+      .text_color(ok ? t.foreground : t.dim)
+      .when(i === sel && ok, (el) => el.bg(t.selected))
+      .when(ok, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))
+      .on_click((_ev, cx) => { if (ok) this.open(e); else cx.stop_propagation(); })
+      .child(this.glyph(e, t))
+      .child(div().flex_1().truncate().child(e.name))
+      .child(div().text_size(11).text_color(t.dim).child(hint))
+      .child(div().w(12).text_size(11).text_color(t.dim).child(i < 9 && ok ? String(i + 1) : ""));
+  }
+
+  render() {
+    const t = theme();
+    const list = this.list();
+    const pickable = list.filter((e) => this.canOpen(e));
+    this.at = Math.max(0, Math.min(this.at, pickable.length - 1));
+    const sel = list.indexOf(pickable[this.at]);
+    const { folder, machine } = this.target;
+    const firstTui = list.findIndex((e) => e.tui);
+
+    const body = [];
+    if (!this.found) body.push(div().px(9).py(8).text_color(t.dim).child("Looking for editors…"));
+    else if (this.error && !list.length) body.push(div().px(9).py(8).text_color(t.blocked).child(`Could not look for editors: ${this.error}`));
+    else if (!list.length) body.push(div().px(9).py(8).text_color(t.dim).child("No code editor found. Install Cursor, VS Code, Zed or another editor and open this again."));
+    list.forEach((e, i) => {
+      if (i === firstTui) body.push(div().px(9).pt(8).pb(4).text_size(11).text_color(t.dim).child("In a split"));
+      body.push(this.row(e, i, sel, t));
+    });
+
+    return v_flex().id("open-with").track_focus(this.handle).w_full().min_h(0).bg(t.popover).p(6).text_size(12.8)
+      .on_key_down((ev, cx) => {
+        const k = ev.key;
+        if (k === "escape") return this.close();
+        if (ev.modifiers.control || ev.modifiers.platform || ev.modifiers.alt) return;
+        if (k === "down" && pickable.length) this.at = (this.at + 1) % pickable.length;
+        else if (k === "up" && pickable.length) this.at = (this.at + pickable.length - 1) % pickable.length;
+        else if (k === "enter") return void this.open(pickable[this.at]);
+        else if (/^[1-9]$/.test(k)) return void this.open(list[Number(k) - 1]);
+        else return;
+        cx.stop_propagation();
+        cx.notify();
+      })
+      .child(h_flex().px(9).pt(6).pb(8).gap(10).items_center()
+        .child(v_flex().flex_1().min_w(0).gap(2)
+          .child(div().text_size(14).font_semibold().text_color(t.foreground).child("Open with"))
+          .child(div().text_size(11).text_color(t.dim).truncate().child(machine ? `${machine}: ${folder}` : shortPath(folder, machine))))
+        .child(div().text_size(11).text_color(t.dim).child("Esc")))
+      .child(div().h(1).mx(4).mb(4).bg(t.border))
+      .child(v_flex().max_h(420).overflow_y_scrollbar().children(body));
+  }
+}

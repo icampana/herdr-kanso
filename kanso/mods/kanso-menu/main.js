@@ -7,9 +7,16 @@
 // splits through the strip, so the new pane lands beside the clicked one.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, theme, terminals, panes, setShared, keys } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, terminals, panes, spaces, setShared, keys } from "herdr";
 
 const ICON = "mods/kanso-chrome/icons/";
+
+// The clicked pane's folder in a code editor (the `open-with` mod), on the
+// machine its space lives on.
+function openWith(p) {
+  const space = spaces().find((s) => s.tabs.some((x) => x.id === p.tab));
+  openOverlay({ mod: "open-with", kind: "popup", width: 340, props: { folder: p.cwd, machine: space?.machine ?? null } });
+}
 
 // The model pane behind the clicked terminal (or block).
 function realPane(tg) {
@@ -25,6 +32,7 @@ function items(tg) {
   const term = all.find((t) => t.address === tg.terminal);
   const parent = term?.parent && all.find((t) => t.address === term.parent);
   const toProgram = term?.labels?.["herdr.right-click"] === "program";
+  const info = panes().find((p) => p.pane === pane);
   // A split first tells the strip where the new pane goes.
   const split = (label, dir, icon, key) => [label, () => {
     setShared("strip.intent", { dir, from: pane, at: Date.now() });
@@ -37,6 +45,7 @@ function items(tg) {
     ...(term ? [[toProgram ? "Use Herdr right-click menu" : "Send right-clicks to pane",
       () => run("terminal.right_click", { terminal: term.address, to: toProgram ? "menu" : "program" }), "sidebar", null]] : []),
     ...(parent ? [[`Send back to ${parent.name || parent.address}`, () => run("terminal.park", { terminal: term.address }), "chevron-right", null]] : []),
+    ...(info?.cwd ? [["Open with…", () => openWith(info), "open-with", "mod.open:open-with"]] : []),
     ["Close pane", () => run("pane.close", { pane }), "close", "kanso-strip.close"],
   ];
 }
@@ -70,7 +79,7 @@ export default class KansoMenu extends View {
         cx.notify();
       })
       .children(list.map((it, i) => v_flex()
-        .when(i > 0 && (i === 2 || it[0] === "Close pane"), (el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+        .when(i > 0 && (i === 2 || it[0] === "Open with…" || it[0] === "Close pane"),(el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
         .child(h_flex().id(`km-${i}`).h(30).px(8).gap(9).rounded(7).items_center()
           .text_color(t.foreground).when(i === this.at, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
           .on_click(() => this.choose(i))

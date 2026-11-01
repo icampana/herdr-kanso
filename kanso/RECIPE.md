@@ -82,7 +82,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       - The folder (`~/...`) and branch (with a branch glyph) as plain 11.5
         text.
       - At the right, the pane's status. On hover the status gives way to
-        split right, split down, zoom and close (15 icons).
+        open with (a terminal pane only), split right, split down, zoom and
+        close (15 icons).
       - Terminal padding is `[14, 10]`.
     - **Side panel**, at the right of the panes: 368 wide (280 to 900),
       hidden by default. It holds whichever panel is open: `kanso-files`,
@@ -217,7 +218,18 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - `kanso-pane`: pane header.
   - `kanso-menu`: the terminal right-click menu (root `terminal_menu`):
     split right and left through the strip, width, right-clicks
-    to the program, send back, close.
+    to the program, send back, "Open with…" (when the pane has a folder),
+    close.
+  - `open-with`: a popup (380 wide, at the top; 340 at the pointer from the
+    menu and the header) that opens a folder in a code editor. Props
+    `{folder, machine}`; without them, the focused pane's folder. It lists the
+    editors found on this computer (macOS app folders, `command -v`, Flatpak),
+    the last one used first (shared `open-with.recent`), with each app's own
+    icon on macOS. Enter, 1 to 9 or a click opens; Esc leaves. Terminal
+    editors open with `terminal.open {place: "right"}`. A folder on another
+    machine opens over SSH in the VS Code family (`--remote ssh-remote+<machine>`)
+    and Zed (`ssh://<machine>/<path>`); the rest show "local only".
+    Cmd+Shift+O (`mod.open:open-with`, in `keys.json`) opens it.
   - `kanso-chrome`: sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
   - `kanso-files`: lazy file tree via `sh`, git status marks.
@@ -232,10 +244,12 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   `watchFolder`, `readTextFile`, `openOverlay`, `run`, `home`, `appHome`,
   `updates`.
 - **Commands**: `layout.set`, `layout.resize`, `space.*`, `tab.*`, `pane.*`,
-  `app.settings`, `app.palette`, `mod.open` (`picker`, `machine-add`).
+  `app.settings`, `app.palette`, `mod.open` (`picker`, `machine-add`,
+  `open-with`), `terminal.open`.
 - **Shipped overlays used**: `menu`, `new-menu`, `picker`, `machine-add`.
-- **Programs run**: `git` (spaces, Files, Changes), `sh` (Files listing) and
-  `hc` (machines). Nothing reaches the network.
+- **Programs run**: `git` (spaces, Files, Changes), `sh` (Files listing),
+  `hc` (machines) and, for Open with, `sh`, `open`, `plutil` and `sips`
+  (macOS) and the chosen editor. Nothing reaches the network.
 
 ## Watch out
 
@@ -286,7 +300,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 
 ## Done when
 
-- `herdr-app check` passes for all seven `kanso-*` mods, and
+- Right-click a terminal, "Open with…": the popup names that pane's folder
+  and lists the installed editors; picking one opens that folder in it.
+- `herdr-app check` passes for all seven `kanso-*` mods and `open-with`, and
   `herdr-app status` shows no errors after `layout.switch {name: "kanso"}`.
 - With no panel open, `panel-body` in the layout file has no children. After
   clicking Files it holds exactly one `files` block, and closing it empties

@@ -5,6 +5,7 @@
     "cmd-shift-d": "kanso-strip.new-left",
     "cmd-alt-shift-d": "terminal",
     "cmd-shift-w": "kanso-strip.close",
+    "cmd-shift-o": "mod.open:open-with",
     "cmd-alt-left": "kanso-strip.go-left",
     "cmd-alt-right": "kanso-strip.go-right",
     "cmd-alt-up": "terminal",
