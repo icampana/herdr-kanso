@@ -17,8 +17,12 @@ principle of simplicity, removing what is not needed.
 Left to right, then top to bottom. Sizes are px at zoom 1.
 
 - **Sidebar**, theme `chrome` (`#161615` dark, `#e3dfd6` light).
-  - **Top strip**, 48 tall: empty. It holds the macOS traffic lights (at
-    `[12, 16]`) and drags the window.
+  - **Top strip**, 48 tall: the macOS traffic lights (at `[12, 16]`) and,
+    76 in on macOS (14 elsewhere), Herdr's mark: its icon
+    (`frame/welcome/herdr.png`, 20, radius 5) and "Herdr" (13, semibold,
+    `foreground`), so you know what you're in. It drags the window.
+    Collapsed, the strip is empty and the mark sits lower, over the rail's
+    buttons.
   - **Spaces** (`kanso-spaces`), filling the middle.
     - Open (256 wide): a 40-tall row with a + (New space) at the left, and
       Search and Hide sidebar at the right. Each is a 32 square with a 17 icon
@@ -266,7 +270,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - **Layout tree** (`layouts/kanso.json`), root `row`, `titlebar: "none"`,
   `traffic_lights: [12, 16]`, `resizable: true`, `terminal_menu: "kanso-menu"`:
   - `sidebar` (column, `chrome`, 256 px, min 200, max 480):
-    - `brand`: block `kanso-chrome` (draws nothing), 48 px, `window_drag`.
+    - `brand`: block `kanso-chrome` (Herdr's mark), 48 px, `window_drag`.
     - `spaces`: block `kanso-spaces`.
     - `sidebar-footer`: block `kanso-chrome` with `{footer: true}`, 156 px.
   - `work` (column, padding 6, gap 4):
@@ -307,7 +311,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     machine opens over SSH in the VS Code family (`--remote ssh-remote+<machine>`)
     and Zed (`ssh://<machine>/<path>`); the rest show "local only".
     Cmd+Shift+O (`mod.open:open-with`, in `keys.json`) opens it.
-  - `kanso-chrome`: sidebar footer, plus the icon set.
+  - `kanso-chrome`: the top strip's mark and the sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
   - `kanso-files`: lazy file tree via `sh`, git status marks.
   - `kanso-changes`: git diff and commit.

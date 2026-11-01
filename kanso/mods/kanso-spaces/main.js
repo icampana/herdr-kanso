@@ -495,19 +495,16 @@ export default class Spaces extends View {
     const plus = quiet("space-new", "plus", "New space", () => run("space.new"));
     const hide = quiet("sidebar-toggle", "sidebar", collapsed ? "Show sidebar" : "Hide sidebar", toggle);
     const search = quiet("search", "search", "Search", () => run("mod.open", { name: "picker" }));
-    // Herdr's mark at the top, as in its own layout, so you know what you're in.
-    const brand = h_flex().id("brand").gap(8).items_center().flex_none()
-      .child(image("frame/welcome/herdr.png").size(20).rounded(5))
-      .when(!collapsed, (el) => el.child(div().font_semibold().text_color(t.foreground).child("Herdr")));
-    // One row when open: the mark at the left; new space, search and hide at
-    // the right, same size. Collapsed, the mark over the buttons, stacked so
-    // two never sit on top of each other.
+    // Collapsed, Herdr's mark sits here over the buttons (open, it's in the
+    // top bar beside the traffic lights, drawn by kanso-chrome).
+    const brand = image("frame/welcome/herdr.png").size(20).rounded(5).flex_none();
+    // One row when open: + at the left, search and hide at the right, same size.
+    // Collapsed, stack them so two buttons never sit on top of each other.
     const add = collapsed
       ? v_flex().w_full().pt(8).gap(6).items_center().child(brand).child(plus).child(hide)
-      : h_flex().h(40).pl(14).pr(10).gap(4).items_center()
-        .child(brand)
-        .child(div().flex_1())
+      : h_flex().h(40).px(10).gap(4).items_center()
         .child(plus)
+        .child(div().flex_1())
         .child(search)
         .child(hide);
     return v_flex().id("spaces-root").size_full().min_h(0).bg(t.chrome).text_size(13)
