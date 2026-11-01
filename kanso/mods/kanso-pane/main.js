@@ -77,12 +77,17 @@ export default class Pane extends View {
     return null;
   }
 
-  // Dragging the grip at the header's right edge resizes this column; the
-  // next one gives or takes the space (shared "strip.resize" while held).
+  // The grip at the header's right edge (six dots, always visible): drag it
+  // sideways to resize this column; the next one gives or takes the space
+  // (shared "strip.resize" while held). Keep the pointer on the header row.
   grip(t, pane) {
-    return div().id(`grip-${pane}`).w(10).h_full().flex_none().flex().items_center().justify_center().cursor_col_resize()
+    const held = shared("strip.resize")?.pane === pane;
+    return div().id(`grip-${pane}`).w(18).h_full().flex_none().flex().items_center().justify_center().cursor_col_resize()
+      .tooltip("Drag to resize")
+      .text_color(held ? t.foreground : t.dim)
+      .hover((h) => h.text_color(t.foreground))
       .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); setShared("strip.resize", { pane, x: e.position.x, w: this.share(pane), px: this.width ?? 0, at: Date.now() }); })
-      .child(div().w(2).h(14).rounded_full().bg(this.hovered ? t.input : "#00000000"));
+      .child(svg("mods/kanso-chrome/icons/grip-vertical.svg").size(14));
   }
 
   // While a resize drag is held, every header forwards pointer moves to the strip.
@@ -90,7 +95,7 @@ export default class Pane extends View {
     const r = shared("strip.resize");
     if (!r || !r.w || !r.px) return;
     const dx = e.position.x - r.x;
-    if (Math.abs(dx) < 4) return;
+    if (Math.abs(dx) < 2) return;
     setShared("strip.resize", { ...r, x: e.position.x });
     setShared("strip.req", { op: "resize", pane: r.pane, d: dx / (r.px / r.w), n: Date.now() + Math.random() });
   }

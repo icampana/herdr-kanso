@@ -68,6 +68,19 @@ const step = (list, v) => list[(list.findIndex((s) => Math.abs(s - v) < EPS) + 1
 const rows = (c) => Math.max(1, Math.floor(1 / c.h + EPS));
 const nonce = () => Date.now() + Math.random();
 
+// While a header grip is held (shared "strip.resize"), any strip surface
+// under the pointer forwards its moves, so the drag survives crossing a peek
+// or free space. Terminal text never reports the pointer; stay on the headers.
+function forwardResize(e) {
+  const r = shared("strip.resize");
+  if (!r || !r.w || !r.px) return;
+  const dx = e.position.x - r.x;
+  if (Math.abs(dx) < 2) return;
+  setShared("strip.resize", { ...r, x: e.position.x });
+  setShared("strip.req", { op: "resize", pane: r.pane, d: dx / (r.px / r.w), n: nonce() });
+}
+const endResize = () => { if (shared("strip.resize")) setShared("strip.resize", null); };
+
 export default class Strip extends View {
   init(_props, cx) {
     const p = props() ?? {};
@@ -126,6 +139,7 @@ export default class Strip extends View {
       .font_family(String(s.font ?? s.font_family ?? "JetBrains Mono")).text_size(size).text_color(t.foreground)
       .children(this.lines.map((l, i) => div().id(`pl-${i}`).h(Math.round(size * 1.38)).whitespace_nowrap().child(l || " ")));
     return div().id("peek").relative().size_full().overflow_hidden().bg(t.background).cursor_pointer()
+      .on_mouse_move(forwardResize).on_mouse_up("left", endResize)
       .on_size_change((sz, cx) => { this.size = sz; cx.notify(); })
       .on_click(() => setShared("strip.req", { op: "focus", pane: p.peek, n: nonce() }))
       .child(text.opacity(0.4))
@@ -423,7 +437,7 @@ export default class Strip extends View {
   }
 
   render() {
-    if (this.kind === "filler") return div().size_full().bg(theme().background);
+    if (this.kind === "filler") return div().id("filler").size_full().bg(theme().background).on_mouse_move(forwardResize).on_mouse_up("left", endResize);
     if (this.kind === "peek") return this.renderPeek();
     const t = theme();
     if (this.halted && Date.now() - this.halted > 10000) { this.halted = 0; this.sets = []; this.applied = null; }

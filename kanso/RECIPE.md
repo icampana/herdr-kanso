@@ -64,8 +64,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     - **Panes**: an endless canvas (`kanso-strip`). Panes sit side by side
       in columns. You choose how many fit in the view at once, 1 to 8
       (default 2): a new column takes 1/n of it, so on a wide screen you can
-      hold 3, 4 or more side by side. A lone pane fills the view. Dragging
-      the grip at a header's right edge resizes that column; its neighbour
+      hold 3, 4 or more side by side. A lone pane fills the view. Every header ends in a
+      six-dot grip (14 icon, `dim`, `foreground` on hover or while held,
+      col-resize cursor). Dragging it sideways resizes that column; its neighbour
       gives or takes the space (never under 8% of the view), the rest reflow,
       and the row grows or shrinks in pages. The view slides continuously
       over the row. A column cut by the edge shows that terminal's screen as
@@ -243,7 +244,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   block) or on a single-child wrapper's id. The side panel's toggle lives on
   `panel-body` itself for that reason.
 - Herdr won't let a mod handle the mouse over terminal text, so reordering
-  is Ctrl+drag on the pane headers, not on the terminal.
+  is Ctrl+drag on the pane headers, not on the terminal, and a grip drag only
+  tracks while the pointer stays on the header row (peeks and fillers forward
+  it too; a terminal below the headers swallows it).
 - A terminal block takes the keyboard on click, so `focused().pane` is null
   and implicit pane commands fail. Pass `pane` or `terminal` explicitly
   (`pane.split {pane}`, `pane.focus {terminal}`), and focus a new pane only
