@@ -146,10 +146,13 @@ export default class Pane extends View {
     const pic = icon(p.program, 15, t.muted);
     const st = p.status;
     const pane = p.pane;
-    // No background and no rule under it: the header is part of the pane, and
-    // only the focused pane's title carries full ink.
+    // No rule under it: the header is part of the pane. The selected pane's
+    // header is a shade lighter and its title in full ink; in the strip that
+    // is the pane the strip remembers, so it stays marked while a side panel
+    // has the keyboard. A pane whose agent needs you is tinted in its color.
     const strip = Boolean(props()?.strip);
-    const on = p.focused || (strip && p.terminal && focused()?.terminal === p.terminal);
+    const remembered = strip ? shared("strip.state")?.[p.tab]?.focus : null;
+    const on = remembered ? remembered === pane : p.focused || (strip && p.terminal && focused()?.terminal === p.terminal);
     // Ctrl+drag a header onto another to rearrange the strip.
     const drag = strip ? shared("strip.drag") : null;
     const dropping = Boolean(drag && drag.pane !== pane && this.hovered);
@@ -161,6 +164,8 @@ export default class Pane extends View {
       .gap(10)
       .items_center()
       .text_size(12.5)
+      .when(st === "blocked", (el) => el.bg(t.blocked + "24"))
+      .when(on && st !== "blocked", (el) => el.bg(t.selected))
       // Dropping: a bar on the edge the pane will land on.
       .when(dropping && side === "before", (el) => el.border_l(3).border_color(t.foreground))
       .when(dropping && side === "after", (el) => el.border_r(3).border_color(t.foreground))

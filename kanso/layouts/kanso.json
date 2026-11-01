@@ -89,12 +89,12 @@
                       },
                       "background": "background",
                       "border": {
-                        "width": 1,
-                        "color": "background"
+                        "width": 0,
+                        "color": "border"
                       },
                       "focus": {
-                        "width": 1,
-                        "color": "dim"
+                        "width": 0,
+                        "color": "border"
                       },
                       "radius": 0,
                       "gap": 1

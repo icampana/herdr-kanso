@@ -1,9 +1,9 @@
 # Kanso
 
 Kanso is a quiet Herdr layout for long days with coding agents. Warm stone
-greys, no decoration: the only text in full ink is the focused pane's, a
-faint ring marks the selected pane, and color appears only when an agent's
-state matters (working, needs you, finished). Its second idea is that nothing you aren't looking at runs:
+greys, no outlines, no decoration: the selected pane's header is a shade
+lighter and its title the only text in full ink, and color appears only when
+an agent's state matters (working, needs you, finished). Its second idea is that nothing you aren't looking at runs:
 side panels exist only while open, and background checks slow down when the
 window is behind others. Its third is an endless strip of panes, as in
 Omarchy's scrolling layout: a new pane opens beside the focused one at its own
@@ -78,11 +78,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       column's height equally. Panes never move vertically: dragging one out
       of a stack makes it its own column. A tab holding a mod pane falls back to
       Herdr's own split view.
-      Every pane (and peek) has a 1px ring, so nothing reflows when it
-      changes: `background` (unseen), `dim` on the selected pane, `blocked`
-      on a pane whose agent needs you. The fallback split view rings the
-      focused pane in `dim` the same way.
-      Each pane has a 34-tall header (`kanso-pane`, always shown):
+      Each pane has a 34-tall header (`kanso-pane`, always shown). The
+      selected pane's header has the `selected` background (in the strip, the
+      pane the strip remembers, so it stays marked while a side panel has the
+      keyboard); a pane whose agent needs you has `blocked` at 14% instead.
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
         `foreground` and medium weight when focused, `muted` otherwise.
       - The folder (`~/...`) and branch (with a branch glyph) as plain 11.5
@@ -393,8 +392,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   a sixth of the view and the next column shrinks by the same.
 - Cmd+Alt+Left past the first column in view slides the view.
 - Select the second of three panes, go to another space and back: that pane
-  takes typing at once, with no click, and has the faint ring. An agent
-  asking for input rings its pane in `blocked`.
+  takes typing at once, with no click, and its header is the lighter one.
+  An agent asking for input tints its pane's header in `blocked`.
   Cmd+Shift+Enter makes the focused column 2/3 wide without changing any
   other column.
 - Dragging a grip onto the right half of another header moves that pane
