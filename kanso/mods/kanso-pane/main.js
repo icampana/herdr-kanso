@@ -149,7 +149,8 @@ export default class Pane extends View {
     // No rule under it: the header is part of the pane. The selected pane's
     // header is a shade lighter and its title in full ink; in the strip that
     // is the pane the strip remembers, so it stays marked while a side panel
-    // has the keyboard. A pane whose agent needs you is tinted in its color.
+    // has the keyboard. A pane whose agent needs you can't be missed: its
+    // header is tinted in the alarm color over a breathing bar of it.
     const strip = Boolean(props()?.strip);
     const remembered = strip ? shared("strip.state")?.[p.tab]?.focus : null;
     const on = remembered ? remembered === pane : p.focused || (strip && p.terminal && focused()?.terminal === p.terminal);
@@ -157,6 +158,7 @@ export default class Pane extends View {
     const drag = strip ? shared("strip.drag") : null;
     const dropping = Boolean(drag && drag.pane !== pane && this.hovered);
     const side = this.dropSide ?? "after";
+    const ink = on || st === "blocked"; // full ink: the selected pane, and one that needs you
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -164,7 +166,9 @@ export default class Pane extends View {
       .gap(10)
       .items_center()
       .text_size(12.5)
-      .when(st === "blocked", (el) => el.bg(t.blocked + "24"))
+      .relative()
+      .when(st === "blocked", (el) => el.bg(t.blocked + "66")
+        .child(div().absolute().left_0().bottom_0().w_full().h(2).bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })))
       .when(on && st !== "blocked", (el) => el.bg(t.selected))
       // Dropping: a bar on the edge the pane will land on.
       .when(dropping && side === "before", (el) => el.border_l(3).border_color(t.foreground))
@@ -189,14 +193,14 @@ export default class Pane extends View {
           this.dropSide = null;
         }))
       .on_click(() => run("pane.focus", strip && p.terminal ? { terminal: p.terminal } : { pane }))
-      .when(Boolean(pic), (el) => el.child(pic.opacity(on ? 1 : 0.75)))
-      .child(div().flex_none().truncate().max_w(260).text_size(12.5).when(on, el => el.font_medium()).text_color(on ? t.foreground : t.muted).child(name))
-      .when(Boolean(p.cwd), (el) => el.child(this.where(t, folder(p.cwd), null, on)))
-      .when(Boolean(p.branch), (el) => el.child(this.where(t, p.branch, "mods/kanso-chrome/icons/branch.svg", on)))
+      .when(Boolean(pic), (el) => el.child(pic.opacity(ink ? 1 : 0.75)))
+      .child(div().flex_none().truncate().max_w(260).text_size(12.5).when(ink, el => el.font_medium()).text_color(ink ? t.foreground : t.muted).child(name))
+      .when(Boolean(p.cwd), (el) => el.child(this.where(t, folder(p.cwd), null, ink)))
+      .when(Boolean(p.branch), (el) => el.child(this.where(t, p.branch, "mods/kanso-chrome/icons/branch.svg", ink)))
       .child(div().flex_1())
       .when(st === "working" && !this.hovered, el => el.child(h_flex().w(12).h(12).flex_none().items_center().justify_center().text_size(10).text_color(t.working).child(div().frames(["\u00b7", "\u2022", "\u25cf", "\u2022"], 450))))
-      .when(st === "blocked", el => el.child(h_flex().flex_none().gap(6).items_center().text_size(11.5).text_color(t.blocked)
-        .child(div().size(6).rounded_full().bg(t.blocked)).child("Needs you")))
+      .when(st === "blocked", el => el.child(h_flex().flex_none().gap(6).items_center().text_size(11.5).font_medium().text_color(t.foreground)
+        .child(div().size(7).rounded_full().bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })).child("Needs you")))
       .when(st === "done" && !this.hovered, el => el.child(div().size(6).flex_none().rounded_full().bg(t.done)))
       .when(this.hovered, el => el
         .when(Boolean(p.cwd), el => el.child(this.button(t, `ph-o-${pane}`, "open-with", () => this.openWith(p))))

@@ -81,7 +81,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       Each pane has a 34-tall header (`kanso-pane`, always shown). The
       selected pane's header has the `selected` background (in the strip, the
       pane the strip remembers, so it stays marked while a side panel has the
-      keyboard); a pane whose agent needs you has `blocked` at 14% instead.
+      keyboard). A pane whose agent needs you has `blocked` at 40% instead,
+      a 2px `blocked` bar along the header's bottom breathing between 45% and
+      full (1.6 s), its title in full ink, and "Needs you" in `foreground`
+      after a breathing dot.
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
         `foreground` and medium weight when focused, `muted` otherwise.
       - The folder (`~/...`) and branch (with a branch glyph) as plain 11.5
