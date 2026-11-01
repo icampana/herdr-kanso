@@ -325,11 +325,11 @@ export default class Spaces extends View {
         .child(svg(`mods/kanso-chrome/icons/${m ? "server" : "monitor"}.svg`).size(14).flex_none())
         .when(!collapsed, el => el.child(div().flex_1().truncate().child(m ?? "This computer"))
           .when(!connected, el => el.child(div().flex_none().child((machine?.state ?? "asleep").replace(/_/g, " "))))
-          .when(connected, el => el.child(div().id(`machine-add-${m ?? "local"}`).flex_none().px(4).rounded(4).hover(s => s.bg(t.hover).text_color(t.foreground))
+          .when(connected, el => el.child(div().id(`machine-add-${m ?? "local"}`).flex_none().px(4).rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); run("space.new", m ? { machine: m } : {}); }).child("+")))
-          .child(div().size(6).rounded(3).flex_none().bg(connected ? t.ansi2 : t.dim))
+          .child(div().size(6).rounded_full().flex_none().bg(connected ? t.ansi2 : t.dim))
           .child(svg(`mods/kanso-chrome/icons/chevron-${folded ? "right" : "down"}.svg`).size(12).flex_none()));
-      const empty = h_flex().id(`machine-new-${m ?? "local"}`).h(28).flex_none().px(8).gap(7).items_center().rounded(7)
+      const empty = h_flex().id(`machine-new-${m ?? "local"}`).h(28).flex_none().px(8).gap(7).items_center().rounded(6)
         .text_size(12).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => run("space.new", m ? { machine: m } : {}))
         .child(svg("mods/kanso-chrome/icons/plus.svg").size(14)).tooltip("New space");
@@ -400,7 +400,7 @@ export default class Spaces extends View {
       .h(rowHeight({ tree }))
       .flex_none()
       .justify_center()
-      .rounded(8)
+      .rounded(6)
       .cursor_pointer()
       .when(on, (el) => el.bg(wash))
       .when(!on, (el) => el.hover((s) => s.bg(washHover)))
@@ -428,7 +428,7 @@ export default class Spaces extends View {
           .gap(9)
           .items_center()
           .when(Boolean(tree), el => el.pl(CHILD_PAD).child(svg("mods/kanso-chrome/icons/branch.svg").size(13).text_color(rt.muted)))
-          .when(!tree, el => el.child(h_flex().size(22).flex_none().rounded(7).bg(fill + "26").items_center().justify_center().text_size(12).font_semibold().text_color(fill).child(w.name[0]?.toUpperCase() ?? "?")))
+          .when(!tree, el => el.child(h_flex().size(22).flex_none().rounded(6).bg(fill + "26").items_center().justify_center().text_size(12).font_semibold().text_color(fill).child(w.name[0]?.toUpperCase() ?? "?")))
           .child(div().flex_shrink(0).max_w(150).truncate().text_color(tree && !on ? rt.muted : rt.foreground).when(on, (el) => el.font_medium()).child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, rt) : div().flex_1())
           .when(mine.length > 0, (el) => el.child(this.fold(w, mine, rt))),
@@ -449,14 +449,14 @@ export default class Spaces extends View {
         .flex()
         .items_center()
         .justify_center()
-        .rounded(8)
+        .rounded(6)
         .cursor_pointer()
         .tooltip(w.name)
         .when(w.active, (el) => el.bg(t.foreground + "14"))
         .when(!w.active, (el) => el.hover((s) => s.bg(t.foreground + "0c")))
         .on_click(() => run("space.select", { id: w.id }))
         .on_mouse_down("right", () => this.menu(w))
-        .child(h_flex().size(22).flex_none().rounded(7).bg(fill + "26").items_center().justify_center()
+        .child(h_flex().size(22).flex_none().rounded(6).bg(fill + "26").items_center().justify_center()
           .text_size(12).font_semibold().text_color(fill).child(w.name[0]?.toUpperCase() ?? "?"))
         .when(speaks, (el) => el.child(div().absolute().top(4).right(4).size(7).rounded_full()
           .border(1).border_color(t.chrome).bg(tone(t, w.status)))),
@@ -480,7 +480,7 @@ export default class Spaces extends View {
     }
     if (changed) setShared("space.colors", kept);
     this.colors = kept;
-    const quiet = (id, icon, tip, action) => div().id(id).size(32).flex_none().flex().items_center().justify_center().rounded(8)
+    const quiet = (id, icon, tip, action) => div().id(id).size(32).flex_none().flex().items_center().justify_center().rounded(6)
       .text_color(t.muted).cursor_pointer().tooltip(tip)
       .hover((s) => s.bg(t.foreground + "12").text_color(t.foreground))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -497,7 +497,7 @@ export default class Spaces extends View {
     const search = quiet("search", "search", "Search", () => run("mod.open", { name: "picker" }));
     // Collapsed, Herdr's mark sits here over the buttons (open, it's in the
     // top bar beside the traffic lights, drawn by kanso-chrome).
-    const brand = image("frame/welcome/herdr.png").size(20).rounded(5).flex_none();
+    const brand = image("frame/welcome/herdr.png").size(20).rounded(6).flex_none();
     // One row when open: + at the left, search and hide at the right, same size.
     // Collapsed, stack them so two buttons never sit on top of each other.
     const add = collapsed

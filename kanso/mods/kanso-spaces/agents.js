@@ -34,12 +34,12 @@ export function statusMark(t, status, compact = false) {
   // A slow breathing dot, not a spinner: .frames redraws ~2 times a second where
   // .spin redraws the whole window ~30 times a second while any agent works.
   if (status === "working") return h_flex().w(12).h(12).mx(1).flex_none().items_center().justify_center().text_size(10).text_color(t.working).child(div().frames(["\u00b7", "\u2022", "\u25cf", "\u2022"], 450));
-  if (status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-  if (status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
-  if (status === "done") return div().size(7).mx(3).flex_none().rounded(4).bg(t.done);
+  if (status === "blocked" && compact) return div().size(14).flex_none().rounded(6).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
+  if (status === "blocked") return div().flex_none().px(6).h(18).rounded(6).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+  if (status === "done") return div().size(7).mx(3).flex_none().rounded_full().bg(t.done);
   // No status (a terminal that doesn't report one): no mark, same width.
   if (!status) return div().size(7).mx(3).flex_none();
-  return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
+  return div().size(7).mx(3).flex_none().rounded_full().border(1.5).border_color(t.idle ?? t.dim);
 }
 
 // Herdr's agents() lists only programs that report a status. Every other
@@ -62,7 +62,7 @@ export const mostUrgent = (list) => list.reduce((m, a) => ((RANK[a.status] ?? 0)
 // the most urgent state among them, so a blocked agent is never hidden.
 export function agentFold(id, mine, open, onToggle, t) {
   const top = mostUrgent(mine);
-  return h_flex().id(`agents-fold-${id}`).flex_none().h(20).px(3).gap(4).items_center().rounded(5)
+  return h_flex().id(`agents-fold-${id}`).flex_none().h(20).px(3).gap(4).items_center().rounded(6)
     .text_size(11).text_color(t.dim).cursor_pointer()
     .hover((s) => s.bg(t.input).text_color(t.foreground))
     // The row selects on mouse up and drags on mouse down: keep both to the toggle.
@@ -83,7 +83,7 @@ export function agentRow(a, indent, t, drag) {
   const idle = (a.status === "idle" || a.status === "done" || !a.status) && !a.focused;
   const machine = a.address.includes("/") ? a.address.split("/")[0] : null;
   return h_flex().id(`space-agent-${a.address}`).h(AGENT_ROW).flex_none().pl(AGENT_PAD + indent).pr(8).gap(8)
-    .items_center().rounded(8).text_size(12.5).cursor_pointer()
+    .items_center().rounded(6).text_size(12.5).cursor_pointer()
     .when(a.focused, (el) => el.bg(t.foreground + "0c"))
     .hover((s) => s.bg(t.foreground + "0c"))
     .on_click(() => run("pane.focus", { pane: a.pane }))

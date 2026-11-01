@@ -222,7 +222,7 @@ export default class OpenWith extends View {
     if (this.icons[e.id]) return image(this.icons[e.id]).size(18).flex_none();
     if (e.icon) return div().size(18).flex_none().items_center().justify_center().flex().child(svg(e.icon).size(15).text_color(t.foreground));
     const c = TILES[EDITORS.indexOf(e) % TILES.length];
-    return div().size(18).flex_none().rounded(5).bg(c).flex().items_center().justify_center()
+    return div().size(18).flex_none().rounded(6).bg(c).flex().items_center().justify_center()
       .text_size(10.5).font_bold().text_color("#ffffff").child(e.name[0]);
   }
 
@@ -230,7 +230,7 @@ export default class OpenWith extends View {
     const ok = this.canOpen(e);
     const recent = (shared(RECENT) ?? [])[0] === e.id;
     const hint = !ok ? "local only" : e.tui ? "split" : recent ? "last used" : "";
-    return h_flex().id(`ow-${e.id}`).h(32).px(9).gap(10).rounded(7).items_center().flex_none()
+    return h_flex().id(`ow-${e.id}`).h(32).px(9).gap(10).rounded(6).items_center().flex_none()
       .text_color(ok ? t.foreground : t.dim)
       .when(i === sel && ok, (el) => el.bg(t.selected))
       .when(ok, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))

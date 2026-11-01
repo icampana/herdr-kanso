@@ -15,7 +15,7 @@ export default class WorkspaceChrome extends View {
     if (props()?.footer) {
       // Secondary nav (Settings, Add machine), then the account chip, as in shadcn's dashboard-01.
       // Collapsed, every item is a centred square with its label as a tooltip.
-      const row = (id, icon, label, action) => h_flex().id(id).relative().h(34).flex_none().items_center().rounded(8)
+      const row = (id, icon, label, action) => h_flex().id(id).relative().h(34).flex_none().items_center().rounded(6)
         .text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground)).cursor_pointer()
         .on_click(action).child(svg(icon).size(17).flex_none())
         .when(collapsed, el => el.w(34).justify_center().tooltip(label))
@@ -24,9 +24,9 @@ export default class WorkspaceChrome extends View {
       const who = basename(home()) || "me";
       const n = agents().length;
       const count = `${n} ${n === 1 ? "agent" : "agents"}`;
-      const avatar = div().size(collapsed ? 28 : 32).flex_none().rounded(8).bg(t.selected).flex().items_center().justify_center()
+      const avatar = div().size(collapsed ? 28 : 32).flex_none().rounded(6).bg(t.selected).flex().items_center().justify_center()
         .font_semibold().text_size(13).text_color(t.foreground).child(who[0].toUpperCase());
-      const chip = h_flex().id("account").h(collapsed ? 40 : 48).flex_none().items_center().rounded(8).cursor_pointer()
+      const chip = h_flex().id("account").h(collapsed ? 40 : 48).flex_none().items_center().rounded(6).cursor_pointer()
         .hover(s => s.bg(t.hover)).on_click(() => run("app.settings")).child(avatar)
         .when(collapsed, el => el.w(40).justify_center().tooltip(`${who} · ${count}`))
         .when(!collapsed, el => el.px(8).gap(10).child(v_flex().flex_1().min_w(0)
@@ -40,7 +40,7 @@ export default class WorkspaceChrome extends View {
           .when(ready && collapsed, el => el.child(dot().absolute().top(6).right(6))))
         // A server, not a second "+": the rail already has one for New space.
         .child(row("machine", "mods/kanso-chrome/icons/server.svg", "Add machine", () => run("mod.open", { name: "machine-add" })))
-        .child(div().h(1).my(4).flex_none().bg(t.border).when(collapsed, el => el.w(28)).when(!collapsed, el => el.mx(2)))
+        .child(div().h(8).flex_none())
         .child(chip);
     }
     // The top bar holds the traffic lights and lets you drag the window. Open,
@@ -48,7 +48,7 @@ export default class WorkspaceChrome extends View {
     // rail shows it lower, over the buttons). The actions live one row lower.
     const lights = window()?.platform === "macos" ? 76 : 14;
     return h_flex().size_full().bg(t.chrome).items_center().justify_end().pl(lights).pr(14).gap(8)
-      .when(!collapsed, el => el.child(image("frame/welcome/herdr.png").size(20).rounded(5))
+      .when(!collapsed, el => el.child(image("frame/welcome/herdr.png").size(20).rounded(6))
         .child(div().font_semibold().text_size(13).text_color(t.foreground).child("Herdr")));
   }
 }

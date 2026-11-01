@@ -17,7 +17,7 @@ function specsBadge(space, t) {
   const alert = terminals().some((term) => pending.has(term.labels?.spec) && blocked.has(term.address));
   return h_flex().gap(4).items_center()
     .child(div().text_size(11).text_color(t.muted).child(String(badge.n)))
-    .when(alert, el => el.child(div().size(6).rounded(3).bg(t.blocked)));
+    .when(alert, el => el.child(div().size(6).rounded_full().bg(t.blocked)));
 }
 
 // The side panels, mounted on demand: the panel stack holds at most one block,
@@ -127,12 +127,12 @@ export default class Tabs extends View {
     const ps = panes();
     const tree = layout();
     const stop = (_e, cx) => cx.stop_propagation();
-    const button = (id, label, action) => div().id(id).size(28).flex_none().flex().items_center().justify_center().rounded(7).text_color(t.muted).hover(s => s.bg(t.foreground + "0a").text_color(t.foreground))
+    const button = (id, label, action) => div().id(id).size(28).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted).hover(s => s.bg(t.foreground + "0a").text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = ps.find(p => p.tab === c.id && p.program?.agent)?.program ?? ps.find(p => p.tab === c.id)?.program;
       const name = c.name;
-      return h_flex().id(`tab-${c.id}`).h(TAB_H).px(10).gap(6).rounded(7).items_center().flex_none().text_size(12.5)
+      return h_flex().id(`tab-${c.id}`).h(TAB_H).px(10).gap(6).rounded(6).items_center().flex_none().text_size(12.5)
         .bg(c.active ? t.foreground + "12" : CLEAR)
         .text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(c.active ? t.foreground + "12" : t.foreground + "0a").text_color(t.foreground))
@@ -146,7 +146,7 @@ export default class Tabs extends View {
         .when(Boolean(program?.icon), el => el.child((program.tint ? svg(program.icon).size(15).text_color(t.muted) : image(program.icon).size(15)).opacity(c.active ? 1 : 0.8)))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(h_flex().w(12).h(12).flex_none().items_center().justify_center().text_size(10).text_color(t.working).child(div().frames(["\u00b7", "\u2022", "\u25cf", "\u2022"], 450))))
-        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
+        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded_full().bg(t[c.status])))
         .when(c.active && shown.length > 1, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).hover(s => s.text_color(t.foreground)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/kanso-chrome/icons/close.svg").size(13))));
     };
     const panel = find(tree, "panel"), body = find(tree, "panel-body");
@@ -158,7 +158,7 @@ export default class Tabs extends View {
     this.syncPanel(space, now, enabled);
     const panelButton = (id, label, icon, extra) => {
       const on = now === id;
-      return h_flex().id(`panel-${id}`).h(TAB_H).px(9).gap(6).flex_none().items_center().rounded(7)
+      return h_flex().id(`panel-${id}`).h(TAB_H).px(9).gap(6).flex_none().items_center().rounded(6)
         .text_size(12).bg(on ? t.foreground + "12" : CLEAR)
         .text_color(on ? t.foreground : t.muted)
         .hover(s => s.bg(on ? t.foreground + "12" : t.foreground + "0a").text_color(t.foreground)).on_mouse_down("left", stop)
@@ -168,8 +168,8 @@ export default class Tabs extends View {
     // The count comes from the Specs panel itself, so it shows only while that
     // panel is open (closed, the panel isn't running and its count would be stale).
     const specsExtra = now === "specs" ? specsBadge(space, t) : null;
-    // No background of its own: the inset card behind it shows through, so the rounded corners stay clean.
-    return h_flex().size_full().min_w(0).px(12).gap(2).items_center().border_b(1).border_color(t.border)
+    // No background and no line of its own: it sits on the frame.
+    return h_flex().size_full().min_w(0).px(12).gap(2).items_center()
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => this.wheel(e))
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(6).overflow_x_scrollbar()

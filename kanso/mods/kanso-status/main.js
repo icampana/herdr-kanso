@@ -36,7 +36,7 @@ export default class WorkspaceStatus extends View {
       .when(right, el => el.child(h_flex().gap(6).items_center()
         .child(div().size(6).rounded_full().bg(working > 0 ? t.working : t.idle))
         .child(agentsText)))
-      .when(right, el => el.child(div().id("palette").px(6).py(2).rounded(5).cursor_pointer()
+      .when(right, el => el.child(div().id("palette").px(6).py(2).rounded(6).cursor_pointer()
         .hover(s => s.bg(t.foreground + "0a").text_color(t.muted))
         .on_click(() => run("app.palette"))
         .child(mac ? "⌘⇧P" : "Ctrl+Shift+P")

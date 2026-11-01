@@ -6,8 +6,8 @@ you is tinted), and nothing running that you aren't looking at. Side panels exis
 slow down when the window is behind. Panes live on an endless strip, as in
 Omarchy's scrolling layout: a new one opens beside the focused one at its own
 width, nothing shrinks, and the view slides to it, a pane at a time, never
-showing a cut one: a narrow tab at the edge stands for what lies beyond. You
-choose how many panes the view holds at once, 1 to 8.
+showing a cut one: a narrow rail at the edge stacks what lies beyond (hover it
+for their names). You choose how many panes the view holds at once, 1 to 8.
 
 | Keys | What they do |
 |---|---|
@@ -20,8 +20,8 @@ choose how many panes the view holds at once, 1 to 8.
 | Cmd+Shift+- and Cmd+Shift+= | Fewer or more panes per view (1 to 8) |
 | Cmd+Shift+0 | Even the panes out |
 | Cmd+Shift+Enter | Make the pane wider or narrower |
-| Drag the thin handle at a header's right edge | Resize that pane; the others reflow |
-| Drag the six-dot grip onto another pane | Move it before or after that pane |
+| Drag the gutter between two panes | Resize them, sideways or up and down |
+| Drag the six-dot grip onto another pane | Left or right quarter: a column before or after it. Middle: stack it under that pane |
 | Wheel over a header or the minimap | Slide the view |
 | Cmd+Shift+O | Open the pane's folder in a code editor |
 | Cmd+Alt+P | Pin the pane (or unpin it): it keeps its place and stays in view |

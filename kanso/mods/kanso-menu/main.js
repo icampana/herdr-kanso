@@ -83,7 +83,7 @@ export default class KansoMenu extends View {
       })
       .children(list.map((it, i) => v_flex()
         .when(i > 0 && (i === 3 || it[0] === "Open with…" || it[0] === "Close pane"),(el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
-        .child(h_flex().id(`km-${i}`).h(30).px(8).gap(9).rounded(7).items_center()
+        .child(h_flex().id(`km-${i}`).h(30).px(8).gap(9).rounded(6).items_center()
           .text_color(t.foreground).when(i === this.at, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
           .on_click(() => this.choose(i))
           .child(svg(`${ICON}${it[2]}.svg`).size(14).flex_none().text_color(t.muted))

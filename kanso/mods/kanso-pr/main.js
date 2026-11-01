@@ -494,7 +494,7 @@ export default class PullRequest extends View {
     // Labels in their own color, as T3 Code's label chips.
     const labels = (pr.labels ?? []).map((l) => {
       const color = labelColor(l.color) ?? c.dim;
-      return h_flex().h(22).px(8).gap(5).items_center().rounded(11).bg(color + "26")
+      return h_flex().h(22).px(8).gap(5).items_center().rounded(6).bg(color + "26")
         .child(div().size(6).rounded_full().bg(color))
         .child(div().max_w(160).truncate().text_size(11.5).text_color(c.text).child(l.name));
     });

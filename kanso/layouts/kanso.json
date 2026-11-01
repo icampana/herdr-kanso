@@ -96,11 +96,11 @@
                         "width": 0,
                         "color": "border"
                       },
-                      "radius": 0,
-                      "gap": 1
+                      "radius": 8,
+                      "gap": 6
                     }
                   },
-                  "background": "border"
+                  "background": "chrome"
                 },
                 {
                   "id": "panel-body",
@@ -115,17 +115,11 @@
                   "background": "background"
                 }
               ],
-              "background": "border",
+              "background": "chrome",
               "padding": 0,
-              "gap": 1
+              "gap": 6
             }
           ],
-          "background": "background",
-          "border": {
-            "width": 1,
-            "color": "border"
-          },
-          "radius": 10,
           "resizable": false
         },
         {
