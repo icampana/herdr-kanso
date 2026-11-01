@@ -24,7 +24,8 @@
 //
 // State per tab in shared "strip.state": { cols: [{ panes, w, h, y }], vx }
 //   w: column width as a share of the view; vx: the view's left edge on the
-//   row, in view widths; h: a pane's height in its column; y: first pane shown.
+//   row, in view widths. A column may stack panes (split down): they share
+//   its height equally and never move vertically; drag moves a pane sideways.
 // Headers and peeks talk to the controller through shared "strip.req"
 // (scroll, focus, move, width) and "strip.intent" (where the next pane goes).
 
@@ -65,7 +66,6 @@ function find(node, id) {
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const step = (list, v) => list[(list.findIndex((s) => Math.abs(s - v) < EPS) + 1) % list.length];
-const rows = (c) => Math.max(1, Math.floor(1 / c.h + EPS));
 const nonce = () => Date.now() + Math.random();
 
 // While a header grip is held (shared "strip.resize"), any strip surface
@@ -191,13 +191,12 @@ export default class Strip extends View {
     if (st.vx === undefined) st.vx = 0;
     if (!st.n) st.n = shared("strip.n") ?? DEFAULT_N;
     const ids = new Set(ps.map((p) => p.pane));
-    // Horizontal only: one pane per column (older stacked columns are split).
-    st.cols = st.cols.flatMap((c) => c.panes.filter((id) => ids.has(id)).map((id) => ({ panes: [id], w: c.w, h: 1, y: 0 })));
+    st.cols = st.cols.map((c) => ({ panes: c.panes.filter((id) => ids.has(id)), w: c.w })).filter((c) => c.panes.length);
     const known = new Set(st.cols.flatMap((c) => c.panes));
     const fresh = ps.filter((p) => !known.has(p.pane));
     if (fresh.length && !st.cols.length) {
       // First sight of this tab: a lone pane fills the view; more sit side by side.
-      for (const p of fresh) st.cols.push({ panes: [p.pane], w: fresh.length === 1 ? 1 : newW(st), h: 1, y: 0 });
+      for (const p of fresh) st.cols.push({ panes: [p.pane], w: fresh.length === 1 ? 1 : newW(st) });
     } else {
       for (const p of fresh) { this.place(st, p.pane); st.focus = p.pane; this.pendingFocus = p.terminal; this.reveal(st, p.pane); }
     }
@@ -209,16 +208,17 @@ export default class Strip extends View {
     const intent = shared("strip.intent");
     const usable = intent && intent.at !== this.usedIntent && Date.now() - intent.at < 5000;
     if (usable) this.usedIntent = intent.at;
-    const dir = usable ? (intent.dir === "up" ? "left" : intent.dir === "down" ? "right" : intent.dir) : "right";
+    const dir = usable ? intent.dir : "right";
     const at = this.where(st, usable ? intent.from : st.focus) ?? { ci: st.cols.length - 1, ri: 0 };
-    st.cols.splice(dir === "left" ? at.ci : at.ci + 1, 0, { panes: [id], w: newW(st), h: 1, y: 0 });
+    // Down or up: stacked in the same column, under or over the pane it came from.
+    if (dir === "down" || dir === "up") st.cols[at.ci].panes.splice(dir === "down" ? at.ri + 1 : at.ri, 0, id);
+    else st.cols.splice(dir === "left" ? at.ci : at.ci + 1, 0, { panes: [id], w: newW(st) });
   }
 
   clampView(st) {
     const max = Math.max(0, this.total(st) - 1);
     st.vx = clamp(st.vx ?? 0, 0, max);
     st.tx = clamp(st.tx ?? st.vx, 0, max);
-    for (const c of st.cols) c.y = clamp(c.y ?? 0, 0, Math.max(0, c.panes.length - rows(c)));
   }
 
   // Slides the view the least that shows a pane whole (niri's "never center").
@@ -230,9 +230,6 @@ export default class Strip extends View {
     if (s < from) st.tx = s;
     else if (e > from + 1) st.tx = e - 1;
     if (st.tx !== st.vx) this.dirty = true;
-    const col = st.cols[at.ci], n = rows(col);
-    if (at.ri < (col.y ?? 0)) col.y = at.ri;
-    if (at.ri >= (col.y ?? 0) + n) col.y = at.ri - n + 1;
     this.clampView(st);
   }
 
@@ -248,16 +245,20 @@ export default class Strip extends View {
     const go = (ci, ri) => {
       const col = st.cols[ci];
       if (!col) return;
-      this.focusOn(st, col.panes[clamp(ri ?? col.y ?? 0, 0, col.panes.length - 1)], ps);
+      this.focusOn(st, col.panes[clamp(ri ?? 0, 0, col.panes.length - 1)], ps);
     };
     const split = (dir) => {
       if (!id) return;
       setShared("strip.intent", { dir, from: id, at: Date.now() });
-      run("pane.split", { pane: id, direction: "right" });
+      run("pane.split", { pane: id, direction: dir === "down" || dir === "up" ? "down" : "right" });
     };
     switch (name) {
-      case "go-left": if (at) go(at.ci - 1); break;
-      case "go-right": if (at) go(at.ci + 1); break;
+      case "go-left": if (at) go(at.ci - 1, at.ri); break;
+      case "go-right": if (at) go(at.ci + 1, at.ri); break;
+      case "go-up": if (at && at.ri > 0) go(at.ci, at.ri - 1); break;
+      case "go-down": if (at && at.ri < st.cols[at.ci].panes.length - 1) go(at.ci, at.ri + 1); break;
+      case "new-down": split("down"); break;
+      case "new-up": split("up"); break;
       case "move-left": case "move-right":
         if (at) {
           const to = at.ci + (name === "move-left" ? -1 : 1);
@@ -323,7 +324,7 @@ export default class Strip extends View {
     let best = null;
     for (let ci = 0; ci < st.cols.length; ci++) if (whole(ci) && (best === null || Math.abs(ci - (at?.ci ?? 0)) < Math.abs(best - (at?.ci ?? 0)))) best = ci;
     if (best === null) return;
-    const col = st.cols[best], id = col.panes[col.y ?? 0];
+    const col = st.cols[best], id = col.panes[0];
     const p = panes().find((q) => q.pane === id);
     st.focus = id; st.lastSeen = id;
     if (p?.terminal) this.pendingFocus = p.terminal;
@@ -354,16 +355,18 @@ export default class Strip extends View {
     }
   }
 
-  // A pane dragged onto another lands before or after it (`side`); without a
-  // side, on the side it came from.
+  // A pane dragged onto another lands as its own column before or after
+  // that one's column (`side`); without a side, on the side it came from.
+  // Panes never move vertically: one dragged out of a stack leaves it.
   move(st, id, to, side) {
     const from = this.where(st, id), target = this.where(st, to);
-    if (!from || !target || id === to) return;
+    if (!from || !target || id === to || (from.ci === target.ci && st.cols[from.ci].panes.length === 1)) return;
     const col = st.cols[from.ci];
     const after = side ? side === "after" : from.ci < target.ci;
-    st.cols.splice(from.ci, 1);
+    col.panes.splice(from.ri, 1);
+    if (!col.panes.length) st.cols.splice(from.ci, 1);
     const t = this.where(st, to);
-    st.cols.splice(after ? t.ci + 1 : t.ci, 0, col);
+    st.cols.splice(after ? t.ci + 1 : t.ci, 0, { panes: [id], w: col.w });
   }
 
   // ---- The tree ----------------------------------------------------------------
@@ -383,15 +386,12 @@ export default class Strip extends View {
       const e = s + c.w, frac = Math.min(e, v1) - Math.max(s, v0);
       if (frac > MIN_PEEK) {
         covered += frac;
-        const n = rows(c), shown = c.panes.slice(c.y ?? 0, (c.y ?? 0) + n);
+        const shown = c.panes;
         if (frac >= c.w - EPS) {
-          const used = shown.length * c.h;
-          if (shown.length === 1 && used >= 1 - EPS) out.push(live(shown[0], { weight: weight(frac) }));
-          else {
-            const kids = shown.map((id) => live(id, { weight: weight(c.h) }));
-            if (used < 1 - EPS) kids.push(filler(`strip-fill-${c.panes[0]}`, 1 - used));
-            out.push({ id: `strip-col-${c.panes[0]}`, type: "column", gap: 1, background: "border", resizable: false, size: { weight: weight(frac) }, children: kids });
-          }
+          // One pane: the cell is the column. Stacked: equal shares of the height.
+          if (shown.length === 1) out.push(live(shown[0], { weight: weight(frac) }));
+          else out.push({ id: `strip-col-${c.panes[0]}`, type: "column", gap: 1, background: "border", resizable: false, size: { weight: weight(frac) },
+            children: shown.map((id) => live(id, { weight: 1000 })) });
         } else {
           // Cut by the view's edge: a peek of its first pane in view.
           const id = shown[0];
@@ -485,9 +485,12 @@ export default class Strip extends View {
       const s0 = x, e0 = x + c.w; x = e0;
       const seen = Math.min(e0, st.vx + 1) - Math.max(s0, st.vx);
       const tone = at?.ci === i ? t.foreground : seen >= c.w - EPS ? t.muted : seen > MIN_PEEK ? t.dim : t.input;
-      return div().id(`strip-mark-${i}`).h(14).px(1).flex_none().flex().items_center().cursor_pointer()
+      // A stacked column shows one thin bar per pane.
+      const w = Math.round(6 + c.w * 18), k = c.panes.length;
+      return v_flex().id(`strip-mark-${i}`).h(14).px(1).gap(1).flex_none().justify_center().cursor_pointer()
         .on_click(() => { this.focusOn(st, c.panes[0], ps); this.dirty = true; })
-        .child(div().w(Math.round(6 + c.w * 18)).h(4).rounded_full().bg(tone));
+        .children(c.panes.map((id, r) => div().id(`strip-cell-${id}`).w(w).h(k > 1 ? 2 : 4).rounded_full()
+          .bg(at?.ci === i && at?.ri !== r ? t.muted : tone)));
     });
     const n = st.n ?? DEFAULT_N;
     const tiny = (id, label, tip, action) => div().id(id).size(16).flex_none().flex().items_center().justify_center().rounded(4)

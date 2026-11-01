@@ -196,7 +196,7 @@ export default class Pane extends View {
       .when(this.hovered, el => el
         .when(Boolean(p.cwd), el => el.child(this.button(t, `ph-o-${pane}`, "open-with", () => this.openWith(p))))
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
-        .when(!strip, el => el.child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane })))
+        .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
       .when(strip, (el) => el.child(this.grip(t, pane)).child(this.edge(t, pane)));

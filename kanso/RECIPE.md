@@ -73,8 +73,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       and the row grows or shrinks in pages. The view slides continuously
       over the row. A column cut by the edge shows that terminal's screen as
       dimmed text clipped at the edge (a "peek"; Herdr can't clip a live
-      terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. Horizontal only: one pane
-      per column, always full height. A tab holding a mod pane falls back to
+      terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. A split down stacks a pane
+      under the focused one in the same column; stacked panes share the
+      column's height equally. Panes never move vertically: dragging one out
+      of a stack makes it its own column. A tab holding a mod pane falls back to
       Herdr's own split view.
       Each pane has a 34-tall header (`kanso-pane`, always shown):
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
@@ -93,7 +95,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     `kanso-status` with `{side: "right"}`. The minimap is a centred row of
     soft pills, one per column (6 + 18 x its share wide, 4 tall, gap 3, no
     frame): `muted` whole in view, `dim` peeking, `input` off-screen,
-    `foreground` focused. Click a pill to go there. After the pills, a tiny
+    `foreground` focused; a stacked column shows one 2px bar per pane. Click a pill to go there. After the pills, a tiny
     "− n +" control: fewer or more panes per view, and the number itself
     evens the columns out to 1/n.
     `kanso-status`, text 11.5 `muted`:
@@ -147,17 +149,19 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   replace Herdr's tab keys, since the canvas is where you move):
   - Cmd+1 to Cmd+9 go to that pane; Cmd+[ and Cmd+] go to the previous and
     next one. The view glides to it (eases over about 0.3 s).
-  - Cmd+D opens a pane to the right, Cmd+Shift+D to the left. The new pane is
-    focused. The header's split button and the right-click menu do the same.
+  - Cmd+D opens a pane to the right, Cmd+Alt+D to the left, Cmd+Shift+D
+    below (stacked in the same column). The new pane is focused. The header's
+    split buttons and the right-click menu do the same.
   - Cmd+W closes the focused pane. Cmd+Shift+[ and Cmd+Shift+] move it left
     and right. Cmd+Shift+Enter (or the header's zoom button) cycles its width
     1/4, 1/3, 1/2, 2/3, 1.
   - Cmd+Shift+- and Cmd+Shift+= show fewer or more panes per view (every
     column becomes 1/n, the focused one stays in view); Cmd+Shift+0 evens
     the columns out at the current count. `kanso-strip.per-N` sets N directly.
+  - Cmd+Alt+Up/Down (or K/J) move the focus within a stacked column.
   - Kept as alternatives: Cmd+Alt+Left/Right or H/L (focus), with Shift
-    (move), Cmd+Alt+1-9, Cmd+Alt+Home/End, Cmd+Alt+C (centre). Vertical keys
-    (Cmd+Alt+Up/Down, Cmd+Alt+Enter) go to the program.
+    (move), Cmd+Alt+1-9, Cmd+Alt+Home/End, Cmd+Alt+C (centre). There is no
+    vertical move; those keys go to the program.
   - The wheel or a swipe over any pane header or the minimap slides the view
     continuously (600px of travel per view width) without moving the focus;
     if the focused pane slides out of full view, the keyboard moves to the
@@ -217,7 +221,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     `strip.intent` (where the next new pane goes) and `strip.drag`.
   - `kanso-pane`: pane header.
   - `kanso-menu`: the terminal right-click menu (root `terminal_menu`):
-    split right and left through the strip, width, right-clicks
+    split right, left and down through the strip, width, right-clicks
     to the program, send back, "Open with…" (when the pane has a folder),
     close.
   - `open-with`: a popup (380 wide, at the top; 340 at the pointer from the

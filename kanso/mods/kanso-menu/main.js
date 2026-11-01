@@ -36,11 +36,12 @@ function items(tg) {
   // A split first tells the strip where the new pane goes.
   const split = (label, dir, icon, key) => [label, () => {
     setShared("strip.intent", { dir, from: pane, at: Date.now() });
-    run("pane.split", { pane, direction: "right" });
+    run("pane.split", { pane, direction: dir === "down" ? "down" : "right" });
   }, icon, key];
   return [
     split("Split right", "right", "split-right", "kanso-strip.new-right"),
     split("Split left", "left", "split-right", "kanso-strip.new-left"),
+    split("Split down", "down", "split-down", "kanso-strip.new-down"),
     ["Wider or narrower", () => setShared("strip.req", { op: "width", pane, n: Date.now() + Math.random() }), "zoom", "kanso-strip.width"],
     ...(term ? [[toProgram ? "Use Herdr right-click menu" : "Send right-clicks to pane",
       () => run("terminal.right_click", { terminal: term.address, to: toProgram ? "menu" : "program" }), "sidebar", null]] : []),
@@ -79,7 +80,7 @@ export default class KansoMenu extends View {
         cx.notify();
       })
       .children(list.map((it, i) => v_flex()
-        .when(i > 0 && (i === 2 || it[0] === "Open with…" || it[0] === "Close pane"),(el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+        .when(i > 0 && (i === 3 || it[0] === "Open with…" || it[0] === "Close pane"),(el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
         .child(h_flex().id(`km-${i}`).h(30).px(8).gap(9).rounded(7).items_center()
           .text_color(t.foreground).when(i === this.at, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
           .on_click(() => this.choose(i))

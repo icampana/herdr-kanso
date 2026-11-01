@@ -12,7 +12,8 @@ the view holds at once, 1 to 8.
 |---|---|
 | Cmd+1 ... Cmd+9 | Go to pane 1 to 9 |
 | Cmd+[ and Cmd+] | Previous and next pane (the view glides to it) |
-| Cmd+D and Cmd+Shift+D | New pane to the right and to the left |
+| Cmd+D, Cmd+Alt+D, Cmd+Shift+D | New pane right, left, below (stacked) |
+| Cmd+Alt+Up/Down | Move the focus within a stack |
 | Cmd+W | Close the pane |
 | Cmd+Shift+[ and Cmd+Shift+] | Move the pane left and right |
 | Cmd+Shift+- and Cmd+Shift+= | Fewer or more panes per view (1 to 8) |
