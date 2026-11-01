@@ -50,6 +50,9 @@
     "cmd-6": "kanso-strip.col-6",
     "cmd-7": "kanso-strip.col-7",
     "cmd-8": "kanso-strip.col-8",
-    "cmd-9": "kanso-strip.col-9"
+    "cmd-9": "kanso-strip.col-9",
+    "cmd-shift--": "kanso-strip.fewer",
+    "cmd-shift-=": "kanso-strip.more",
+    "cmd-shift-0": "kanso-strip.fit"
   }
 }

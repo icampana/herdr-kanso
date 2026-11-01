@@ -32,8 +32,14 @@ import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { spaces, panes, focused, layout, run, shared, setShared, theme, nextCommand, props, hc, settings } from "herdr";
 
-const W_STEPS = [1 / 3, 1 / 2, 2 / 3, 1];
-const NEW_W = 2 / 3; // a new column: wide enough that its neighbour peeks in
+// How many panes the view holds at once (`st.n`, 1 to 8; you choose). A new
+// column takes 1/n of the view; dragging the divider between two columns
+// resizes them and the others reflow, so the row grows or shrinks in "pages".
+const N_MAX = 8;
+const DEFAULT_N = 2;
+const MIN_W = 0.08; // narrowest a column can be dragged, as a share of the view
+const W_STEPS = [1 / 4, 1 / 3, 1 / 2, 2 / 3, 1];
+const newW = (st) => 1 / (st.n ?? DEFAULT_N);
 const EPS = 1e-3;
 const KEY = "strip.state";
 const HEADER_H = 34;
@@ -157,8 +163,9 @@ export default class Strip extends View {
   total(st) { return st.cols.reduce((s, c) => s + c.w, 0); }
 
   sync(tab, ps) {
-    const st = this.state[tab] ?? { cols: [], vx: 0 };
+    const st = this.state[tab] ?? { cols: [], vx: 0, n: shared("strip.n") ?? DEFAULT_N };
     if (st.vx === undefined) st.vx = 0;
+    if (!st.n) st.n = shared("strip.n") ?? DEFAULT_N;
     const ids = new Set(ps.map((p) => p.pane));
     // Horizontal only: one pane per column (older stacked columns are split).
     st.cols = st.cols.flatMap((c) => c.panes.filter((id) => ids.has(id)).map((id) => ({ panes: [id], w: c.w, h: 1, y: 0 })));
@@ -166,7 +173,7 @@ export default class Strip extends View {
     const fresh = ps.filter((p) => !known.has(p.pane));
     if (fresh.length && !st.cols.length) {
       // First sight of this tab: a lone pane fills the view; more sit side by side.
-      for (const p of fresh) st.cols.push({ panes: [p.pane], w: fresh.length === 1 ? 1 : NEW_W, h: 1, y: 0 });
+      for (const p of fresh) st.cols.push({ panes: [p.pane], w: fresh.length === 1 ? 1 : newW(st), h: 1, y: 0 });
     } else {
       for (const p of fresh) { this.place(st, p.pane); st.focus = p.pane; this.pendingFocus = p.terminal; this.reveal(st, p.pane); }
     }
@@ -180,7 +187,7 @@ export default class Strip extends View {
     if (usable) this.usedIntent = intent.at;
     const dir = usable ? (intent.dir === "up" ? "left" : intent.dir === "down" ? "right" : intent.dir) : "right";
     const at = this.where(st, usable ? intent.from : st.focus) ?? { ci: st.cols.length - 1, ri: 0 };
-    st.cols.splice(dir === "left" ? at.ci : at.ci + 1, 0, { panes: [id], w: NEW_W, h: 1, y: 0 });
+    st.cols.splice(dir === "left" ? at.ci : at.ci + 1, 0, { panes: [id], w: newW(st), h: 1, y: 0 });
   }
 
   clampView(st) {
@@ -240,11 +247,16 @@ export default class Strip extends View {
       case "scroll-left": this.slide(st, -1 / 3); break;
       case "scroll-right": this.slide(st, 1 / 3); break;
       case "center": if (at) { st.tx = this.start(st, at.ci) + st.cols[at.ci].w / 2 - 0.5; this.clampView(st); this.dirty = true; } break;
+      case "fit": this.fit(st, id); break;
+      case "more": this.setN(st, (st.n ?? DEFAULT_N) + 1, id); break;
+      case "fewer": this.setN(st, (st.n ?? DEFAULT_N) - 1, id); break;
       case "first": go(0); break;
       case "last": go(st.cols.length - 1); break;
       default: {
         const n = /^col-(\d)$/.exec(name);
         if (n) go(Number(n[1]) - 1);
+        const per = /^per-(\d)$/.exec(name);
+        if (per) this.setN(st, Number(per[1]), id);
       }
     }
   }
@@ -252,6 +264,29 @@ export default class Strip extends View {
   // Free scrolling moves the view, not the focus. A pane only partly in view
   // is a peek (no live terminal), so if the focused one slides out of full
   // view the keyboard moves to the nearest pane still whole in view.
+  // Choose how many panes fit in the view; every column becomes 1/n wide.
+  setN(st, n, keep) {
+    st.n = clamp(Math.round(n), 1, N_MAX);
+    setShared("strip.n", st.n);
+    for (const c of st.cols) c.w = 1 / st.n;
+    if (keep) { st.tx = undefined; this.reveal(st, keep); st.vx = st.tx ?? st.vx; }
+    this.clampView(st);
+  }
+
+  // Even out the columns to the current count without changing it.
+  fit(st, keep) { this.setN(st, st.n ?? DEFAULT_N, keep); }
+
+  // Dragging the divider right of column `ci` by `d` (share of the view): that
+  // column grows, the next one gives the space, both stay at least MIN_W.
+  resize(st, ci, d) {
+    const a = st.cols[ci], b = st.cols[ci + 1];
+    if (!a) return;
+    if (!b) { a.w = clamp(a.w + d, MIN_W, 1); this.clampView(st); return; }
+    const dd = clamp(d, MIN_W - a.w, b.w - MIN_W);
+    a.w += dd; b.w -= dd;
+    this.clampView(st);
+  }
+
   slide(st, d) {
     st.vx = (st.vx ?? 0) + d;
     st.tx = undefined;
@@ -287,7 +322,9 @@ export default class Strip extends View {
     else if (req.op === "width") {
       const at = this.where(st, req.pane);
       if (at) { st.cols[at.ci].w = step(W_STEPS, st.cols[at.ci].w); this.reveal(st, req.pane); }
-    } else if (req.op === "move") {
+    } else if (req.op === "resize") { const at = this.where(st, req.pane); if (at) this.resize(st, at.ci, req.d); this.dirty = true; }
+    else if (req.op === "per") this.setN(st, req.n, st.focus);
+    else if (req.op === "move") {
       this.move(st, req.pane, req.to);
       this.focusOn(st, req.pane, ps);
     }
@@ -418,7 +455,6 @@ export default class Strip extends View {
     // Minimap: one soft pill per column, as wide as its share of the view, no
     // frame. Whole in view `muted`, peeking `dim`, off-screen `input`, the
     // focused one `foreground`. Click a pill to go there; scroll to slide.
-    if (st.cols.length < 2) return div();
     const at = this.where(st, st.focus);
     let x = 0;
     const pills = st.cols.map((c, i) => {
@@ -429,9 +465,20 @@ export default class Strip extends View {
         .on_click(() => { this.focusOn(st, c.panes[0], ps); this.dirty = true; })
         .child(div().w(Math.round(6 + c.w * 18)).h(4).rounded_full().bg(tone));
     });
+    const n = st.n ?? DEFAULT_N;
+    const tiny = (id, label, tip, action) => div().id(id).size(16).flex_none().flex().items_center().justify_center().rounded(4)
+      .text_size(11).text_color(t.dim).cursor_pointer().tooltip(tip)
+      .hover((h) => h.bg(t.foreground + "12").text_color(t.foreground))
+      .on_click(() => { action(); this.dirty = true; })
+      .child(label);
     return h_flex().id("strip-map").size_full().gap(3).justify_center().items_center()
-      .tooltip("⌘1-9 go to · ⌘[ ⌘] previous, next · ⌘D new · ⌘W close · ⌘⇧[ ⌘⇧] move")
+      .tooltip("⌘1-9 go to · ⌘[ ⌘] previous, next · ⌘D new · ⌘W close · ⌘⇧[ ⌘⇧] move · ⌘⇧- ⌘⇧= panes per view")
       .on_scroll_wheel((ev) => this.wheel(ev, st))
-      .children(pills);
+      .children(pills)
+      .child(div().w(8))
+      .child(tiny("strip-fewer", "\u2212", "Fewer panes per view", () => this.setN(st, n - 1, st.focus)))
+      .child(div().id("strip-n").text_size(11).text_color(t.muted).tooltip(`${n} per view · click to even out`).cursor_pointer()
+        .on_click(() => { this.fit(st, st.focus); this.dirty = true; }).child(String(n)))
+      .child(tiny("strip-more", "+", "More panes per view", () => this.setN(st, n + 1, st.focus)));
   }
 }

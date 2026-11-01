@@ -10,7 +10,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, theme, home, focused, shared, setShared } from "herdr";
+import { panes, spaces, props, run, openOverlay, theme, home, focused, shared, setShared } from "herdr";
 
 const BADGE_MAX_W = 220;
 
@@ -64,6 +64,37 @@ export default class Pane extends View {
     setShared("strip.req", { op: "scroll", d: d / 600, n: Date.now() + Math.random() });
   }
 
+  // The pane's folder in a code editor (the `open-with` mod), on the machine
+  // its space lives on.
+  openWith(p) {
+    const space = spaces().find((s) => s.tabs.some((x) => x.id === p.tab));
+    openOverlay({ mod: "open-with", kind: "popup", width: 340, props: { folder: p.cwd, machine: space?.machine ?? null } });
+  }
+
+  // The column's share of the view, from the strip's state.
+  share(pane) {
+    for (const st of Object.values(shared("strip.state") ?? {})) for (const c of st.cols ?? []) if (c.panes?.includes(pane)) return c.w;
+    return null;
+  }
+
+  // Dragging the grip at the header's right edge resizes this column; the
+  // next one gives or takes the space (shared "strip.resize" while held).
+  grip(t, pane) {
+    return div().id(`grip-${pane}`).w(10).h_full().flex_none().flex().items_center().justify_center().cursor_col_resize()
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); setShared("strip.resize", { pane, x: e.position.x, w: this.share(pane), px: this.width ?? 0, at: Date.now() }); })
+      .child(div().w(2).h(14).rounded_full().bg(this.hovered ? t.input : "#00000000"));
+  }
+
+  // While a resize drag is held, every header forwards pointer moves to the strip.
+  dragMove(e) {
+    const r = shared("strip.resize");
+    if (!r || !r.w || !r.px) return;
+    const dx = e.position.x - r.x;
+    if (Math.abs(dx) < 4) return;
+    setShared("strip.resize", { ...r, x: e.position.x });
+    setShared("strip.req", { op: "resize", pane: r.pane, d: dx / (r.px / r.w), n: Date.now() + Math.random() });
+  }
+
   button(t, id, icon, command, args) {
     return div()
       .id(id)
@@ -73,7 +104,8 @@ export default class Pane extends View {
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        this.act(command, args);
+        if (typeof command === "function") command();
+        else this.act(command, args);
       })
       .child(svg(`mods/kanso-chrome/icons/${icon}.svg`).size(15));
   }
@@ -103,13 +135,17 @@ export default class Pane extends View {
       .when(dropping, (el) => el.bg(t.foreground + "12"))
       .when(Boolean(drag) && drag.pane === pane, (el) => el.opacity(0.5))
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
+      .on_size_change((sz) => { this.width = sz.width; })
       .when(strip, (el) => el
         .on_scroll_wheel((e) => this.wheel(e))
+        .on_mouse_move((e) => this.dragMove(e))
         .on_mouse_down("left", (e) => {
           if (e.modifiers.control) setShared("strip.drag", { pane, at: Date.now() });
           else if (shared("strip.drag")) setShared("strip.drag", null); // a drag dropped elsewhere
+          if (shared("strip.resize")) setShared("strip.resize", null);
         })
         .on_mouse_up("left", (e) => {
+          if (shared("strip.resize")) setShared("strip.resize", null);
           const d = shared("strip.drag");
           if (!d) return;
           if (d.pane !== pane && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: pane, n: Date.now() + Math.random() });
@@ -126,9 +162,11 @@ export default class Pane extends View {
         .child(div().size(6).rounded_full().bg(t.blocked)).child("Needs you")))
       .when(st === "done" && !this.hovered, el => el.child(div().size(6).flex_none().rounded_full().bg(t.done)))
       .when(this.hovered, el => el
+        .when(Boolean(p.cwd), el => el.child(this.button(t, `ph-o-${pane}`, "open-with", () => this.openWith(p))))
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .when(!strip, el => el.child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane })))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
-        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
+        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
+      .when(strip, (el) => el.child(this.grip(t, pane)));
   }
 }

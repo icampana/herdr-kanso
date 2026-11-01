@@ -5,7 +5,8 @@ outlines, color only when an agent needs you, and nothing running that you
 aren't looking at. Side panels exist only while open, and background checks
 slow down when the window is behind. Panes live on an endless strip, as in
 Omarchy's scrolling layout: a new one opens beside the focused one at its own
-width, nothing shrinks, and the view slides to it.
+width, nothing shrinks, and the view slides to it. You choose how many panes
+the view holds at once, 1 to 8.
 
 | Keys | What they do |
 |---|---|
@@ -14,7 +15,10 @@ width, nothing shrinks, and the view slides to it.
 | Cmd+D and Cmd+Shift+D | New pane to the right and to the left |
 | Cmd+W | Close the pane |
 | Cmd+Shift+[ and Cmd+Shift+] | Move the pane left and right |
+| Cmd+Shift+- and Cmd+Shift+= | Fewer or more panes per view (1 to 8) |
+| Cmd+Shift+0 | Even the panes out |
 | Cmd+Shift+Enter | Make the pane wider or narrower |
+| Drag the grip at a header's right edge | Resize that pane; the others reflow |
 | Ctrl+drag a pane header | Rearrange |
 | Wheel over a header or the minimap | Slide the view |
 

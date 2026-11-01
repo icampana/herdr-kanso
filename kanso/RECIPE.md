@@ -62,9 +62,12 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         when their panel is open. Insights and Specs show only when their
         mods are installed.
     - **Panes**: an endless canvas (`kanso-strip`). Panes sit side by side
-      in columns, each a share of the view wide (1/3, 1/2, 2/3 or all of it).
-      A lone pane fills the view; a new one arrives at 2/3, so its
-      neighbour stays peeking in at the edge. The view slides continuously
+      in columns. You choose how many fit in the view at once, 1 to 8
+      (default 2): a new column takes 1/n of it, so on a wide screen you can
+      hold 3, 4 or more side by side. A lone pane fills the view. Dragging
+      the grip at a header's right edge resizes that column; its neighbour
+      gives or takes the space (never under 8% of the view), the rest reflow,
+      and the row grows or shrinks in pages. The view slides continuously
       over the row. A column cut by the edge shows that terminal's screen as
       dimmed text clipped at the edge (a "peek"; Herdr can't clip a live
       terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. Horizontal only: one pane
@@ -86,8 +89,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     `kanso-status` with `{side: "right"}`. The minimap is a centred row of
     soft pills, one per column (6 + 18 x its share wide, 4 tall, gap 3, no
     frame): `muted` whole in view, `dim` peeking, `input` off-screen,
-    `foreground` focused. Click a pill to go there. It shows only with more
-    than one column.
+    `foreground` focused. Click a pill to go there. After the pills, a tiny
+    "− n +" control: fewer or more panes per view, and the number itself
+    evens the columns out to 1/n.
     `kanso-status`, text 11.5 `muted`:
     - At the left, the machine (monitor or server icon, "This computer") and
       the branch.
@@ -143,7 +147,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     focused. The header's split button and the right-click menu do the same.
   - Cmd+W closes the focused pane. Cmd+Shift+[ and Cmd+Shift+] move it left
     and right. Cmd+Shift+Enter (or the header's zoom button) cycles its width
-    1/3, 1/2, 2/3, 1.
+    1/4, 1/3, 1/2, 2/3, 1.
+  - Cmd+Shift+- and Cmd+Shift+= show fewer or more panes per view (every
+    column becomes 1/n, the focused one stays in view); Cmd+Shift+0 evens
+    the columns out at the current count. `kanso-strip.per-N` sets N directly.
   - Kept as alternatives: Cmd+Alt+Left/Right or H/L (focus), with Shift
     (move), Cmd+Alt+1-9, Cmd+Alt+Home/End, Cmd+Alt+C (centre). Vertical keys
     (Cmd+Alt+Up/Down, Cmd+Alt+Enter) go to the program.
@@ -198,7 +205,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - `kanso-strip`: the canvas. The copy in the status row is the controller
     and minimap; copies with `{filler: true}` paint free space and copies
     with `{peek, terminal, side, title}` draw a peek (`hc read` every 3 s). State per
-    tab lives in shared `strip.state` (`{cols: [{panes, w}], vx, tx}`).
+    tab lives in shared `strip.state` (`{cols: [{panes, w}], vx, tx, n}`);
+    the last chosen `n` is in shared `strip.n` for new tabs.
     Headers talk to it through shared `strip.req` (scroll, move, width),
     `strip.intent` (where the next new pane goes) and `strip.drag`.
   - `kanso-pane`: pane header.
@@ -285,8 +293,12 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   lights sit inside it. Opened, it drags between 200 and 480 and reopens at
   the width you left.
 - One trackpad swipe over the tab bar moves exactly one tab.
-- Cmd+D three times from one pane gives four columns at half width. Two show,
-  the minimap shows four marks, and no pane is narrower than half the view.
+- At 3 per view, Cmd+D three times from one pane gives four columns at a
+  third each; the view slides to the new one and the minimap shows four
+  pills. Cmd+Shift+= makes it 4 per view and all four fit; Cmd+Shift+- twice
+  goes back to 2 per view with the focused pane still in view.
+- Dragging a header grip 200px right on a 1200px view moves that divider by
+  a sixth of the view and the next column shrinks by the same.
 - Cmd+Alt+Left past the first column in view slides the view.
   Cmd+Shift+Enter makes the focused column 2/3 wide without changing any
   other column.
