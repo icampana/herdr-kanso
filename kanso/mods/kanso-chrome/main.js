@@ -1,10 +1,10 @@
 // Derived from the `workspace-chrome` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
 // Modified by 0OZ: brand bar, solid sidebar footer with Settings, Add machine and an account chip.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-chrome.
-// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-chrome; sidebar footer as centred squares when collapsed, one icon set (icons/), the top bar left empty.
-import { View, div, svg } from "gpui-kit";
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-chrome; sidebar footer as centred squares when collapsed, one icon set (icons/), Herdr's mark beside the traffic lights.
+import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, run, props, shared, updates, agents, home } from "herdr";
+import { theme, run, props, shared, updates, agents, home, window } from "herdr";
 
 const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
 
@@ -43,8 +43,12 @@ export default class WorkspaceChrome extends View {
         .child(div().h(1).my(4).flex_none().bg(t.border).when(collapsed, el => el.w(28)).when(!collapsed, el => el.mx(2)))
         .child(chip);
     }
-    // Zen: the top bar is empty. It only holds the traffic lights and lets you
-    // drag the window; the actions live one row lower.
-    return div().size_full().bg(t.chrome);
+    // The top bar holds the traffic lights and lets you drag the window. Open,
+    // Herdr's mark sits at its right end, clear of the lights (collapsed, the
+    // rail shows it lower, over the buttons). The actions live one row lower.
+    const lights = window()?.platform === "macos" ? 76 : 14;
+    return h_flex().size_full().bg(t.chrome).items_center().justify_end().pl(lights).pr(14).gap(8)
+      .when(!collapsed, el => el.child(image("frame/welcome/herdr.png").size(20).rounded(5))
+        .child(div().font_semibold().text_size(13).text_color(t.foreground).child("Herdr")));
   }
 }

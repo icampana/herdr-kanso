@@ -7,7 +7,7 @@
 // its first terminal is in now, only where unusual: branch, ahead/behind. Its agents are listed under it (agents.js). Click to
 // switch, right-click for its menu, drag to reorder.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agentRow, agentFold, withTerminals } from "./agents.js";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
@@ -495,10 +495,13 @@ export default class Spaces extends View {
     const plus = quiet("space-new", "plus", "New space", () => run("space.new"));
     const hide = quiet("sidebar-toggle", "sidebar", collapsed ? "Show sidebar" : "Hide sidebar", toggle);
     const search = quiet("search", "search", "Search", () => run("mod.open", { name: "picker" }));
+    // Collapsed, Herdr's mark sits here over the buttons (open, it's in the
+    // top bar beside the traffic lights, drawn by kanso-chrome).
+    const brand = image("frame/welcome/herdr.png").size(20).rounded(5).flex_none();
     // One row when open: + at the left, search and hide at the right, same size.
     // Collapsed, stack them so two buttons never sit on top of each other.
     const add = collapsed
-      ? v_flex().w_full().pt(4).gap(4).items_center().child(plus).child(hide)
+      ? v_flex().w_full().pt(8).gap(6).items_center().child(brand).child(plus).child(hide)
       : h_flex().h(40).px(10).gap(4).items_center()
         .child(plus)
         .child(div().flex_1())

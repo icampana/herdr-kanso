@@ -5,8 +5,9 @@ outlines (the selected pane's header is a shade lighter; one whose agent needs
 you is tinted), and nothing running that you aren't looking at. Side panels exist only while open, and background checks
 slow down when the window is behind. Panes live on an endless strip, as in
 Omarchy's scrolling layout: a new one opens beside the focused one at its own
-width, nothing shrinks, and the view slides to it. You choose how many panes
-the view holds at once, 1 to 8.
+width, nothing shrinks, and the view slides to it, a pane at a time, never
+showing a cut one: a narrow tab at the edge stands for what lies beyond. You
+choose how many panes the view holds at once, 1 to 8.
 
 | Keys | What they do |
 |---|---|
