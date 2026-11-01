@@ -138,8 +138,18 @@ export default class Strip extends View {
       .when(p.side === "left", (el) => el.right(0)).when(p.side !== "left", (el) => el.left(0))
       .font_family(String(s.font ?? s.font_family ?? "JetBrains Mono")).text_size(size).text_color(t.foreground)
       .children(this.lines.map((l, i) => div().id(`pl-${i}`).h(Math.round(size * 1.38)).whitespace_nowrap().child(l || " ")));
+    // Dropping a dragged pane on a peek puts it beyond that column's near edge.
+    const drag = shared("strip.drag");
     return div().id("peek").relative().size_full().overflow_hidden().bg(t.background).cursor_pointer()
-      .on_mouse_move(forwardResize).on_mouse_up("left", endResize)
+      .when(Boolean(drag) && drag.pane !== p.peek, (el) => el.bg(t.hover))
+      .on_mouse_move(forwardResize)
+      .on_mouse_up("left", () => {
+        endResize();
+        const d = shared("strip.drag");
+        if (!d) return;
+        if (d.pane !== p.peek && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: p.peek, side: p.side === "left" ? "before" : "after", n: nonce() });
+        setShared("strip.drag", null);
+      })
       .on_size_change((sz, cx) => { this.size = sz; cx.notify(); })
       .on_click(() => setShared("strip.req", { op: "focus", pane: p.peek, n: nonce() }))
       .child(text.opacity(0.4))
@@ -339,21 +349,21 @@ export default class Strip extends View {
     } else if (req.op === "resize") { const at = this.where(st, req.pane); if (at) this.resize(st, at.ci, req.d); this.dirty = true; }
     else if (req.op === "per") this.setN(st, req.n, st.focus);
     else if (req.op === "move") {
-      this.move(st, req.pane, req.to);
+      this.move(st, req.pane, req.to, req.side);
       this.focusOn(st, req.pane, ps);
     }
   }
 
-  // Ctrl+drag a header onto another: the pane becomes a column beside it, on
-  // the side it came from.
-  move(st, id, to) {
+  // A pane dragged onto another lands before or after it (`side`); without a
+  // side, on the side it came from.
+  move(st, id, to, side) {
     const from = this.where(st, id), target = this.where(st, to);
     if (!from || !target || id === to) return;
-    const width = st.cols[from.ci].w, fromLeft = from.ci < target.ci;
-    st.cols[from.ci].panes.splice(from.ri, 1);
-    if (!st.cols[from.ci].panes.length) st.cols.splice(from.ci, 1);
+    const col = st.cols[from.ci];
+    const after = side ? side === "after" : from.ci < target.ci;
+    st.cols.splice(from.ci, 1);
     const t = this.where(st, to);
-    st.cols.splice(fromLeft ? t.ci + 1 : t.ci, 0, { panes: [id], w: width, h: 1, y: 0 });
+    st.cols.splice(after ? t.ci + 1 : t.ci, 0, col);
   }
 
   // ---- The tree ----------------------------------------------------------------

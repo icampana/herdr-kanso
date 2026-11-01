@@ -77,27 +77,50 @@ export default class Pane extends View {
     return null;
   }
 
-  // The grip at the header's right edge (six dots, always visible): drag it
-  // sideways to resize this column; the next one gives or takes the space
-  // (shared "strip.resize" while held). Keep the pointer on the header row.
+  // The six-dot grip near the header's right edge: drag it onto another
+  // header to move this pane before or after that one (shared "strip.drag"
+  // while held; Ctrl+drag anywhere on the header does the same).
   grip(t, pane) {
-    const held = shared("strip.resize")?.pane === pane;
-    return div().id(`grip-${pane}`).w(18).h_full().flex_none().flex().items_center().justify_center().cursor_col_resize()
-      .tooltip("Drag to resize")
+    const held = shared("strip.drag")?.pane === pane;
+    return div().id(`grip-${pane}`).w(18).h_full().flex_none().flex().items_center().justify_center().cursor_grab()
+      .tooltip("Drag to move before or after another pane")
       .text_color(held ? t.foreground : t.dim)
       .hover((h) => h.text_color(t.foreground))
-      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); setShared("strip.resize", { pane, x: e.position.x, w: this.share(pane), px: this.width ?? 0, at: Date.now() }); })
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); setShared("strip.drag", { pane, at: Date.now() }); })
       .child(svg("mods/kanso-chrome/icons/grip-vertical.svg").size(14));
   }
 
-  // While a resize drag is held, every header forwards pointer moves to the strip.
-  dragMove(e) {
-    const r = shared("strip.resize");
-    if (!r || !r.w || !r.px) return;
-    const dx = e.position.x - r.x;
-    if (Math.abs(dx) < 2) return;
-    setShared("strip.resize", { ...r, x: e.position.x });
-    setShared("strip.req", { op: "resize", pane: r.pane, d: dx / (r.px / r.w), n: Date.now() + Math.random() });
+  // The column's edge: a thin handle at the far right of the header. Drag it
+  // sideways to resize this column; the next one gives or takes the space
+  // (shared "strip.resize" while held). Keep the pointer on the header row.
+  edge(t, pane) {
+    const held = shared("strip.resize")?.pane === pane;
+    return div().id(`edge-${pane}`).w(10).h_full().flex_none().flex().items_center().justify_end().cursor_col_resize()
+      .tooltip("Drag to resize")
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); setShared("strip.resize", { pane, x: e.position.x, w: this.share(pane), px: this.width ?? 0, at: Date.now() }); })
+      .child(div().w(2).h(16).rounded_full().bg(held ? t.foreground : this.hovered ? t.input : "#00000000"));
+  }
+
+  // While a drag is held, every header forwards pointer moves: a resize to the
+  // strip, a move as which half of this header the pointer is on.
+  dragMove(e, cx) {
+    const width = e.bounds?.width || this.width || 0;
+    if (width) this.width = width;
+    let r = shared("strip.resize");
+    // The header's width, from the event itself: a header freshly re-created
+    // by a layout change has no measured width yet.
+    if (r && r.w && !r.px && width && r.pane === props()?.pane) { r = { ...r, px: width }; setShared("strip.resize", r); }
+    if (r && r.w && r.px) {
+      const dx = e.position.x - r.x;
+      if (Math.abs(dx) < 2) return;
+      setShared("strip.resize", { ...r, x: e.position.x });
+      setShared("strip.req", { op: "resize", pane: r.pane, d: dx / (r.px / r.w), n: Date.now() + Math.random() });
+      return;
+    }
+    if (shared("strip.drag")) {
+      const side = e.local_position.x < width / 2 ? "before" : "after";
+      if (side !== this.dropSide) { this.dropSide = side; cx.notify(); }
+    }
   }
 
   button(t, id, icon, command, args) {
@@ -130,6 +153,7 @@ export default class Pane extends View {
     // Ctrl+drag a header onto another to rearrange the strip.
     const drag = strip ? shared("strip.drag") : null;
     const dropping = Boolean(drag && drag.pane !== pane && this.hovered);
+    const side = this.dropSide ?? "after";
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -137,13 +161,15 @@ export default class Pane extends View {
       .gap(10)
       .items_center()
       .text_size(12.5)
-      .when(dropping, (el) => el.bg(t.foreground + "12"))
+      // Dropping: a bar on the edge the pane will land on.
+      .when(dropping && side === "before", (el) => el.border_l(3).border_color(t.foreground))
+      .when(dropping && side === "after", (el) => el.border_r(3).border_color(t.foreground))
       .when(Boolean(drag) && drag.pane === pane, (el) => el.opacity(0.5))
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_size_change((sz) => { this.width = sz.width; })
       .when(strip, (el) => el
         .on_scroll_wheel((e) => this.wheel(e))
-        .on_mouse_move((e) => this.dragMove(e))
+        .on_mouse_move((e, cx) => this.dragMove(e, cx))
         .on_mouse_down("left", (e) => {
           if (e.modifiers.control) setShared("strip.drag", { pane, at: Date.now() });
           else if (shared("strip.drag")) setShared("strip.drag", null); // a drag dropped elsewhere
@@ -153,8 +179,9 @@ export default class Pane extends View {
           if (shared("strip.resize")) setShared("strip.resize", null);
           const d = shared("strip.drag");
           if (!d) return;
-          if (d.pane !== pane && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: pane, n: Date.now() + Math.random() });
+          if (d.pane !== pane && Date.now() - d.at < 15000) setShared("strip.req", { op: "move", pane: d.pane, to: pane, side, n: Date.now() + Math.random() });
           setShared("strip.drag", null);
+          this.dropSide = null;
         }))
       .on_click(() => run("pane.focus", strip && p.terminal ? { terminal: p.terminal } : { pane }))
       .when(Boolean(pic), (el) => el.child(pic.opacity(on ? 1 : 0.75)))
@@ -172,6 +199,6 @@ export default class Pane extends View {
         .when(!strip, el => el.child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane })))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
-      .when(strip, (el) => el.child(this.grip(t, pane)));
+      .when(strip, (el) => el.child(this.grip(t, pane)).child(this.edge(t, pane)));
   }
 }

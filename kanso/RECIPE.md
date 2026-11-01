@@ -66,7 +66,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       (default 2): a new column takes 1/n of it, so on a wide screen you can
       hold 3, 4 or more side by side. A lone pane fills the view. Every header ends in a
       six-dot grip (14 icon, `dim`, `foreground` on hover or while held,
-      col-resize cursor). Dragging it sideways resizes that column; its neighbour
+      grab cursor) and, at the very edge, a thin resize handle (a 2px line
+      that shows on hover, col-resize cursor). Dragging the handle resizes
+      that column; its neighbour
       gives or takes the space (never under 8% of the view), the rest reflow,
       and the row grows or shrinks in pages. The view slides continuously
       over the row. A column cut by the edge shows that terminal's screen as
@@ -160,9 +162,11 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     if the focused pane slides out of full view, the keyboard moves to the
     nearest pane still whole. Cmd+Alt+, and Cmd+Alt+. slide a third of the
     view. Clicking a peek or a minimap mark slides to that pane.
-  - Ctrl+drag a pane header onto another rearranges: the pane becomes a
-    column beside the target, on the side it came from. The dragged header
-    dims, and the target gets a wash.
+  - Drag a header's six-dot grip (or Ctrl+drag the header) onto another
+    header to move the pane: the left half of the target means before it,
+    the right half after it. A 3px `foreground` bar on that edge shows where
+    it will land, and the dragged header dims. Dropping on a peek puts the
+    pane beyond that column's near edge.
 - **Side panels, on demand**:
   - Clicking a panel button rewrites the panel stack to hold only that
     panel's block and shows it. Clicking it again, or closing the panel any
@@ -305,4 +309,5 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - Cmd+Alt+Left past the first column in view slides the view.
   Cmd+Shift+Enter makes the focused column 2/3 wide without changing any
   other column.
-- Ctrl+dragging one header onto another moves that pane beside it.
+- Dragging a grip onto the right half of another header moves that pane
+  after it; onto the left half, before it. Ctrl+drag does the same.
