@@ -9,8 +9,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agentRow, agentFold } from "./agents.js";
-import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { agentRow, agentFold, withQuiet } from "./agents.js";
+import { spaces, machines, panes, agents, knownAgents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
@@ -78,6 +78,11 @@ export default class Spaces extends View {
     this.machines = [];
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.agentsFolded = new Set(JSON.parse(localStorage.getItem("spaces.agentsFolded") ?? "[]"));
+    // Agent programs Herdr knows by name, for the ones that don't report a status.
+    this.agentKeys = new Set();
+    cx.spawn(async (cx) => {
+      try { this.agentKeys = new Set((await knownAgents()).map((a) => a.key)); cx.notify(); } catch {}
+    });
     this.migrate();
     this.refreshMachines(cx);
     // `hc machine ls` is a process: every 30 s while the window is in front,
@@ -264,7 +269,7 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
-    const all = agents();
+    const all = withQuiet(agents(), panes(), spaces(), this.agentKeys);
     const draw = (r) => {
       if (collapsed) return this.compact(r, t);
       const mine = all.filter((a) => a.space === r.w.id);

@@ -187,6 +187,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - Drag a space to reorder it (a 2px `accent` line shows where it lands).
     Right-click opens the shipped space menu.
   - Click an agent row to focus its pane.
+  - Agents that don't report a status to Herdr (Codex, for one) are listed
+    too: panes whose program is one of `knownAgents()`, after the reporting
+    ones, with the idle ring.
 - **Sidebar**:
   - Hide sidebar collapses it to a fixed 76 rail whose edge cannot be
     dragged.

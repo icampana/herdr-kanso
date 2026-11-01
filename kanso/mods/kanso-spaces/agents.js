@@ -37,6 +37,18 @@ export function statusMark(t, status, compact = false) {
   return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
 }
 
+// Herdr's agents() lists only programs that report a status. Agents that
+// don't (Codex, for one) are still recognized by name: panes whose program is
+// one of `keys` (knownAgents) join the list, in the same shape, with no status.
+export function withQuiet(list, ps, ss, keys) {
+  const known = new Set(list.map((a) => a.pane));
+  const where = {};
+  for (const s of ss) (s.tabs ?? []).forEach((tb, i) => { where[tb.id] = { space: s.id, space_name: s.name, tab_index: i, tab_name: tb.name }; });
+  const quiet = ps.filter((p) => p.terminal && !known.has(p.pane) && keys.has(p.program?.key) && where[p.tab])
+    .map((p) => ({ address: p.terminal, pane: p.pane, tab: p.tab, ...where[p.tab], status: null, app: null, program: p.program, title: p.title, seq: 0, focused: p.focused }));
+  return quiet.length ? [...list, ...quiet] : list;
+}
+
 // The most urgent state among agents: blocked > done > working > idle.
 export const mostUrgent = (list) => list.reduce((m, a) => ((RANK[a.status] ?? 0) > (RANK[m] ?? 0) ? a.status : m), null);
 
