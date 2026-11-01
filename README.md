@@ -1,8 +1,8 @@
 # Kanso
 
-A quiet layout for the [Herdr](https://herdr.dev) app: warm stone greys, no
-outlines, color only when an agent needs you, and nothing running that you
-aren't looking at. Side panels exist only while open, and background checks
+A quiet layout for the [Herdr](https://herdr.dev) app: warm stone greys, a
+faint ring on the selected pane and a colored one on a pane whose agent needs
+you, and nothing running that you aren't looking at. Side panels exist only while open, and background checks
 slow down when the window is behind. Panes live on an endless strip, as in
 Omarchy's scrolling layout: a new one opens beside the focused one at its own
 width, nothing shrinks, and the view slides to it. You choose how many panes

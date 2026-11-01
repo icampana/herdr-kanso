@@ -1,9 +1,9 @@
 # Kanso
 
 Kanso is a quiet Herdr layout for long days with coding agents. Warm stone
-greys, no outlines, no decoration: the only text in full ink is the focused
-pane's, and color appears only when an agent's state matters (working, needs
-you, finished). Its second idea is that nothing you aren't looking at runs:
+greys, no decoration: the only text in full ink is the focused pane's, a
+faint ring marks the selected pane, and color appears only when an agent's
+state matters (working, needs you, finished). Its second idea is that nothing you aren't looking at runs:
 side panels exist only while open, and background checks slow down when the
 window is behind others. Its third is an endless strip of panes, as in
 Omarchy's scrolling layout: a new pane opens beside the focused one at its own
@@ -78,6 +78,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       column's height equally. Panes never move vertically: dragging one out
       of a stack makes it its own column. A tab holding a mod pane falls back to
       Herdr's own split view.
+      Every pane (and peek) has a 1px ring, so nothing reflows when it
+      changes: `background` (unseen), `dim` on the selected pane, `blocked`
+      on a pane whose agent needs you. The fallback split view rings the
+      focused pane in `dim` the same way.
       Each pane has a 34-tall header (`kanso-pane`, always shown):
       - Program icon 15 (75% opacity when unfocused) and the title, 12.5 in
         `foreground` and medium weight when focused, `muted` otherwise.
@@ -323,6 +327,14 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   and implicit pane commands fail. Pass `pane` or `terminal` explicitly
   (`pane.split {pane}`, `pane.focus {terminal}`), and focus a new pane only
   once its block is in the layout.
+- Herdr's own focus stays on a tab's model pane, and lands there whenever you
+  come to a tab (another space or tab, a layout switch, a restart). That pane
+  isn't on screen, so the keyboard would go nowhere until a click. The strip
+  remembers the selected pane per tab (`focus` in "strip.state") and, when a
+  model pane holds the focus, hands it to a block: the remembered pane on
+  coming back, or the model pane itself when Herdr's focus moved to a new one
+  (an agent notification, a closed pane). Otherwise it leaves the keyboard
+  alone, so a side panel you click keeps it.
 - Herdr's own terminal menu passes a terminal block's id (`term-<pane>`) as
   its target pane, so its Split and Close fail with "no pane". Kanso ships
   its own menu, which finds the real pane from the clicked terminal.
@@ -380,6 +392,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - Dragging a header grip 200px right on a 1200px view moves that divider by
   a sixth of the view and the next column shrinks by the same.
 - Cmd+Alt+Left past the first column in view slides the view.
+- Select the second of three panes, go to another space and back: that pane
+  takes typing at once, with no click, and has the faint ring. An agent
+  asking for input rings its pane in `blocked`.
   Cmd+Shift+Enter makes the focused column 2/3 wide without changing any
   other column.
 - Dragging a grip onto the right half of another header moves that pane

@@ -46,12 +46,18 @@ const KEY = "strip.state";
 const HEADER_H = 34;
 const WHEEL_PX = 600; // trackpad/wheel pixels that slide the view one full width
 const MIN_PEEK = 0.02; // narrower slivers are left out
+// Every live pane has a 1 px ring, so nothing reflows when it changes color:
+// the background's own color (unseen) normally, a quiet one on the selected
+// pane, the alarm color on a pane whose agent is waiting for you.
+const QUIET_RING = "background";
+const FOCUS_RING = "dim";
+const ATTENTION_RING = "blocked";
 
 const TAB_BLOCK = {
   id: "main", type: "block", background: "border",
   content: { tab: "active", pane: {
     header: { content: { mod: "kanso-pane" }, reveal: "always", height: HEADER_H, position: "top" },
-    background: "background", border: { width: 0, color: "border" }, focus: { width: 0, color: "border" },
+    background: "background", border: { width: 1, color: "background" }, focus: { width: 1, color: FOCUS_RING },
     radius: 0, gap: 1, lone: false } },
 };
 
@@ -330,6 +336,30 @@ export default class Strip extends View {
     if (p?.terminal) this.pendingFocus = p.terminal;
   }
 
+  // The strip shows terminals as layout blocks, never the tab's own panes.
+  // Herdr's focus, though, lands on a tab's pane whenever you come to the tab
+  // (another space or tab, a layout switch, a restart), and that pane isn't
+  // on screen: the keyboard would go nowhere until you clicked. So whenever a
+  // tab's pane holds the focus, the strip hands it to a block: the pane you
+  // had selected in this tab, or the one something chose meanwhile (an agent
+  // notification, closing the selected pane).
+  keepKeyboard(tab, st, ps) {
+    const entered = tab !== this.lastTab;
+    this.lastTab = tab;
+    const f = focused();
+    const p = f?.pane && ps.find((q) => q.pane === f.pane);
+    if (!p?.terminal) return;
+    // Herdr's own focus doesn't follow the blocks, so it only moves when
+    // something chose a pane: then that pane is the choice. Otherwise only
+    // coming to the tab counts, so a side panel you click keeps the keyboard.
+    const moved = st.model != null && f.pane !== st.model;
+    st.model = f.pane;
+    if (!entered && !moved) return;
+    const id = !moved && ps.some((q) => q.pane === st.focus) ? st.focus : f.pane;
+    st.lastSeen = id; // not a new choice: nothing to slide for
+    this.focusOn(st, id, ps);
+  }
+
   focusOn(st, id, ps) {
     const p = ps.find((q) => q.pane === id);
     if (!p) return;
@@ -376,7 +406,8 @@ export default class Strip extends View {
     const weight = (f) => Math.max(1, Math.round(f * 1000));
     const filler = (id, f) => ({ id, type: "block", size: { weight: weight(f) }, content: { mod: "kanso-strip", props: { filler: true } } });
     const header = (id) => ({ id: `head-${id}`, type: "block", size: { px: HEADER_H }, content: { mod: "kanso-pane", props: { pane: id, terminal: byId.get(id).terminal, strip: true } } });
-    const live = (id, size) => ({ id: `strip-${id}`, type: "column", size, background: "background",
+    const ring = (id) => ({ width: 1, color: byId.get(id).status === "blocked" ? ATTENTION_RING : id === st.focus ? FOCUS_RING : QUIET_RING });
+    const live = (id, size) => ({ id: `strip-${id}`, type: "column", size, background: "background", border: ring(id),
       children: [header(id), { id: `term-${id}`, type: "block", content: { terminal: byId.get(id).terminal } }] });
     const peekGeo = {};
     const out = [];
@@ -396,7 +427,7 @@ export default class Strip extends View {
           // Cut by the view's edge: a peek of its first pane in view.
           const id = shown[0];
           peekGeo[id] = { w: c.w, frac };
-          out.push({ id: `strip-peek-${id}`, type: "column", size: { weight: weight(frac) }, background: "background", children: [
+          out.push({ id: `strip-peek-${id}`, type: "column", size: { weight: weight(frac) }, background: "background", border: ring(id), children: [
             header(id),
             { id: `peek-${id}`, type: "block", content: { mod: "kanso-strip", props: { peek: id, terminal: byId.get(id).terminal, side: s < v0 ? "left" : "right", title: byId.get(id).program?.name || byId.get(id).title || "Pane" } } },
           ] });
@@ -460,6 +491,7 @@ export default class Strip extends View {
 
     const st = this.sync(tab, ps);
     this.request(st, ps);
+    this.keepKeyboard(tab, st, ps);
     const now = this.focusPane(ps);
     // A focus change right after a slide is the slide's own doing: don't
     // slide back to it.
