@@ -7,7 +7,7 @@
 // splits through the strip, so the new pane lands beside the clicked one.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, terminals, panes, spaces, setShared, keys } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, terminals, panes, spaces, shared, setShared, keys } from "herdr";
 
 const ICON = "mods/kanso-chrome/icons/";
 
@@ -33,6 +33,7 @@ function items(tg) {
   const parent = term?.parent && all.find((t) => t.address === term.parent);
   const toProgram = term?.labels?.["herdr.right-click"] === "program";
   const info = panes().find((p) => p.pane === pane);
+  const pinned = Boolean(shared("strip.state")?.[info?.tab]?.cols?.find((c) => c.panes?.includes(pane))?.pin);
   // A split first tells the strip where the new pane goes.
   const split = (label, dir, icon, key) => [label, () => {
     setShared("strip.intent", { dir, from: pane, at: Date.now() });
@@ -43,6 +44,7 @@ function items(tg) {
     split("Split left", "left", "split-right", "kanso-strip.new-left"),
     split("Split down", "down", "split-down", "kanso-strip.new-down"),
     ["Wider or narrower", () => setShared("strip.req", { op: "width", pane, n: Date.now() + Math.random() }), "zoom", "kanso-strip.width"],
+    [pinned ? "Unpin pane" : "Pin pane", () => setShared("strip.req", { op: "pin", pane, n: Date.now() + Math.random() }), "pin", "kanso-strip.pin"],
     ...(term ? [[toProgram ? "Use Herdr right-click menu" : "Send right-clicks to pane",
       () => run("terminal.right_click", { terminal: term.address, to: toProgram ? "menu" : "program" }), "sidebar", null]] : []),
     ...(parent ? [[`Send back to ${parent.name || parent.address}`, () => run("terminal.park", { terminal: term.address }), "chevron-right", null]] : []),

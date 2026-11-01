@@ -28,6 +28,7 @@
     "cmd-alt-home": "kanso-strip.first",
     "cmd-alt-end": "kanso-strip.last",
     "cmd-alt-c": "kanso-strip.center",
+    "cmd-alt-p": "kanso-strip.pin",
     "cmd-alt-1": "kanso-strip.col-1",
     "cmd-alt-2": "kanso-strip.col-2",
     "cmd-alt-3": "kanso-strip.col-3",

@@ -18,6 +18,9 @@ export function agentLabel(a) {
   const telling = live && !/^[~/]|^[A-Za-z]:\\/.test(live) && !live.includes("@")
     && live.toLowerCase() !== a.program?.key && live !== a.program?.name;
   if (telling) return live;
+  // A shell says nothing about itself: name it after its folder.
+  const dir = a.program?.shell && a.cwd ? a.cwd.replace(/\/+$/, "").split("/").pop() : null;
+  if (dir) return dir;
   return /^\d+$/.test(a.tab_name ?? "") ? a.program?.name || a.tab_name : a.tab_name || a.program?.name || a.address;
 }
 
@@ -34,7 +37,22 @@ export function statusMark(t, status, compact = false) {
   if (status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
   if (status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
   if (status === "done") return div().size(7).mx(3).flex_none().rounded(4).bg(t.done);
+  // No status (a terminal that doesn't report one): no mark, same width.
+  if (!status) return div().size(7).mx(3).flex_none();
   return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
+}
+
+// Herdr's agents() lists only programs that report a status. Every other
+// terminal (an agent that doesn't report, such as Codex or a model's own CLI,
+// a shell, a server) joins the list in the same shape, with no status, so the
+// sidebar shows every session in the space.
+export function withTerminals(list, ps, ss) {
+  const known = new Set(list.map((a) => a.pane));
+  const where = {};
+  for (const s of ss) (s.tabs ?? []).forEach((tb, i) => { where[tb.id] = { space: s.id, space_name: s.name, tab_index: i, tab_name: tb.name }; });
+  const rest = ps.filter((p) => p.terminal && !known.has(p.pane) && where[p.tab])
+    .map((p) => ({ address: p.terminal, pane: p.pane, tab: p.tab, ...where[p.tab], status: null, app: null, program: p.program, title: p.title, cwd: p.cwd, seq: 0, focused: p.focused }));
+  return rest.length ? [...list, ...rest] : list;
 }
 
 // The most urgent state among agents: blocked > done > working > idle.
@@ -59,20 +77,27 @@ export function agentFold(id, mine, open, onToggle, t) {
 // One agent under its space: icon, title, machine (remote), state. Zen: the
 // focused one carries full ink and a faint wash, the rest stay muted; clicking
 // goes to its pane.
-export function agentRow(a, indent, t) {
+// `drag` (optional): { pinned, target, down, up } to reorder panes from here.
+export function agentRow(a, indent, t, drag) {
   const pic = agentIcon(a.program, 15, t.foreground);
-  const idle = (a.status === "idle" || a.status === "done") && !a.focused;
+  const idle = (a.status === "idle" || a.status === "done" || !a.status) && !a.focused;
   const machine = a.address.includes("/") ? a.address.split("/")[0] : null;
   return h_flex().id(`space-agent-${a.address}`).h(AGENT_ROW).flex_none().pl(AGENT_PAD + indent).pr(8).gap(8)
     .items_center().rounded(8).text_size(12.5).cursor_pointer()
     .when(a.focused, (el) => el.bg(t.foreground + "0c"))
     .hover((s) => s.bg(t.foreground + "0c"))
     .on_click(() => run("pane.focus", { pane: a.pane }))
+    // Dropping: a line on the side the pane will land on.
+    .when(drag?.target === "before", (el) => el.border_t(2).border_color(t.accent))
+    .when(drag?.target === "after", (el) => el.border_b(2).border_color(t.accent))
+    .when(Boolean(drag), (el) => el.on_mouse_down("left", () => drag.down()).on_mouse_up("left", (_e, cx) => drag.up(cx))
+      .on_hover((h, cx) => drag.hover(h, cx)))
     .when(Boolean(pic), (el) => el.child(pic.opacity(a.focused ? 1 : 0.8)))
     .child(div().flex_1().min_w(0).truncate()
       .text_color(a.focused ? t.foreground : idle ? t.dim : t.muted)
       .when(a.focused, (el) => el.font_medium())
       .child(agentLabel(a)))
+    .when(Boolean(drag?.pinned), (el) => el.child(svg("mods/kanso-chrome/icons/pin.svg").size(11).flex_none().text_color(t.dim)))
     .when(Boolean(machine), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(machine)))
     .child(statusMark(t, a.status, true));
 }

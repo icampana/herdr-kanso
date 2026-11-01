@@ -1,8 +1,8 @@
 # Kanso
 
 A quiet layout for the [Herdr](https://herdr.dev) app: warm stone greys, no
-outlines, color only when an agent needs you, and nothing running that you
-aren't looking at. Side panels exist only while open, and background checks
+outlines (the selected pane's header is a shade lighter; one whose agent needs
+you is tinted), and nothing running that you aren't looking at. Side panels exist only while open, and background checks
 slow down when the window is behind. Panes live on an endless strip, as in
 Omarchy's scrolling layout: a new one opens beside the focused one at its own
 width, nothing shrinks, and the view slides to it. You choose how many panes
@@ -23,6 +23,8 @@ the view holds at once, 1 to 8.
 | Drag the six-dot grip onto another pane | Move it before or after that pane |
 | Wheel over a header or the minimap | Slide the view |
 | Cmd+Shift+O | Open the pane's folder in a code editor |
+| Cmd+Alt+P | Pin the pane (or unpin it): it keeps its place and stays in view |
+| Drag a session in the sidebar | Move its pane in the strip |
 
 ![Kanso](kanso/preview.png)
 
