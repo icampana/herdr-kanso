@@ -57,8 +57,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         (13) shows on the active tab only when there is more than one tab.
       - After the tabs, a + (16 icon, 28 square) opens the shipped
         `new-menu`.
-      - At the right are the panel buttons: Files, Insights, Changes and
-        Specs. They are ghost buttons 26 tall (icon 15, text 12) with a wash
+      - At the right are the panel buttons: Files, Insights, Changes, PR
+        and Specs. They are ghost buttons 26 tall (icon 15, text 12) with a wash
         when their panel is open. Insights and Specs show only when their
         mods are installed.
     - **Panes**: an endless canvas (`kanso-strip`). Panes sit side by side
@@ -89,7 +89,53 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       - Terminal padding is `[14, 10]`.
     - **Side panel**, at the right of the panes: 368 wide (280 to 900),
       hidden by default. It holds whichever panel is open: `kanso-files`,
-      `insights`, `kanso-changes` or `sdd-focused`.
+      `insights`, `kanso-changes`, `kanso-pr` or `sdd-focused`.
+      The PR panel (`kanso-pr`) shows the open pull request of the focused
+      pane's branch, as T3 Code does, drawn like the Spend panel: one
+      centered column (max 1080, 16 px sides under 560 wide, else 32), no
+      cards or uppercase labels, `canvas` behind, hierarchy from size, weight
+      and tone, hairlines between list rows. Top to bottom:
+      - Header: "Pull request" (17, 20 when wide) and two 26 icon buttons,
+        refresh (spins while reading) and open on GitHub.
+      - Hero: `#n · head → base` (15, muted); the title (22, 28 wide, light,
+        line height 1.25); a 6 dot and the verdict (15): ready to merge
+        (green), checks failing, conflicts or changes requested (red),
+        checks running or waiting for a review (yellow, breathing), draft
+        (dim), merged (`ansi5`), closed (red); author and age (12, dim).
+        Then light numbers (22/28) with 12 dim units: files, added, removed,
+        threads, checks. Then, while open, a 30-tall primary Merge button
+        (`solid`; a second press within 4 s merges with the first method the
+        repository allows; red while armed; disabled while draft,
+        conflicting or blocked) and quiet links Ready for review or Back to
+        draft, and Close. A closed PR offers Reopen.
+      - People and labels, as T3 Code's meta rows: a 76-wide dim label,
+        the values, and at the right a 22 icon button that opens T3 Code's
+        candidate picker (a popover 288 wide: a search field, then the
+        candidates with a check on those applied; a click applies or takes
+        one back through GitHub's REST API and the picker stays open; a
+        breathing silhouette while it reads; a note when the repository has
+        more than 100). Assignees (with "Assign to me" when you aren't),
+        Reviewers (who reviewed with the outcome, then who is still asked;
+        the author is never offered) and Labels (chips in the label's own
+        color at 15% with a dot of it). Candidates come from GraphQL
+        `assignableUsers` (GitHub's own picker list, readable without push
+        access) and the repository's labels, as in T3 Code.
+      - Checks (when there are any): failing first, 5 shown, "Show N more";
+        a row opens the check's page.
+      - Unresolved threads (when there are any): the first comment, then
+        path:line, author, replies, outdated; a row opens it on GitHub.
+      - Ask your agent: Explain it, Address feedback (open PRs), Resolve
+        conflicts (only when conflicting), as quiet links. Each opens a tab
+        named `#<n> <task>` in the repository, running the first installed
+        agent (`knownAgents`) with T3 Code's task prompt as its first message.
+      - Files: name (13) over folder and add/delete mark (11, dim), +/- at the
+        right; 8 shown, "Show N more"; a row shows its diff inline (first 400
+        lines, monospace, in a hairline box).
+      - A footnote (10.5, dim): read from GitHub with gh, when.
+      - Loading is the view's silhouette in `border` tone, breathing between
+        35% and 80%. Without a PR: "No pull request for <branch>." and
+        "Create it on GitHub" (the web form, once the branch has an
+        upstream). Errors read the same way, with "Try again".
   - **Status bar**, 26 tall: `kanso-status` with `{side: "left"}`, a
     180-wide minimap (`kanso-strip`) exactly in the middle, and
     `kanso-status` with `{side: "right"}`. The minimap is a centred row of
@@ -179,7 +225,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     file watches and processes stop.
   - The open panel is remembered per space and restored when you switch
     spaces.
-  - Files and Changes are idle whenever they aren't the shown panel.
+  - Files, Changes and PR are idle whenever they aren't the shown panel.
+    PR rereads every minute while shown, every 20 s while a check runs.
   - The Specs count on its button shows only while Specs is open.
 - **Background**:
   - While the window is behind others, the spaces list checks git every 5 s
@@ -238,6 +285,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - `kanso-status`: status bar.
   - `kanso-files`: lazy file tree via `sh`, git status marks.
   - `kanso-changes`: git diff and commit.
+  - `kanso-pr`: the pull request panel, read with `gh pr view`, `gh pr diff`
+    and one GraphQL query for unresolved review threads (`gh api graphql`).
   - All are derived from Herdr's shipped mods (Apache-2.0) through the 0OZ
     and minimalistic forks, and all use `"place": "none"`.
 - **Optional mods it can show, not included**: `sdd-focused` (Specs, by José
@@ -253,7 +302,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - **Shipped overlays used**: `menu`, `new-menu`, `picker`, `machine-add`.
 - **Programs run**: `git` (spaces, Files, Changes), `sh` (Files listing),
   `hc` (machines) and, for Open with, `sh`, `open`, `plutil` and `sips`
-  (macOS) and the chosen editor. Nothing reaches the network.
+  (macOS) and the chosen editor. The PR panel runs `gh` (GitHub's API) and
+  `git`, only while it is shown. Nothing else reaches the network.
 
 ## Watch out
 
@@ -306,7 +356,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 
 - Right-click a terminal, "Open with…": the popup names that pane's folder
   and lists the installed editors; picking one opens that folder in it.
-- `herdr-app check` passes for all seven `kanso-*` mods and `open-with`, and
+- In a repository whose branch has an open PR, the PR panel shows its title,
+  checks, review, mergeability, unresolved threads and files; clicking a file
+  shows its diff, and Explain opens an agent tab with the task.
+- `herdr-app check` passes for all eight `kanso-*` mods and `open-with`, and
   `herdr-app status` shows no errors after `layout.switch {name: "kanso"}`.
 - With no panel open, `panel-body` in the layout file has no children. After
   clicking Files it holds exactly one `files` block, and closing it empties

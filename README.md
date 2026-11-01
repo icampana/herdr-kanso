@@ -47,7 +47,7 @@ removes Kanso.
 
 The mods run `git` (the spaces list, Files, Changes), `sh` (the Files listing)
 and `hc machine ls` (machines). They read files only inside the folders you
-work in. Nothing reaches the network.
+work in. Only the PR panel reaches the network (GitHub, below).
 
 Open with (`open-with`: Cmd+Shift+O, the pane header's open button, or
 "Open with…" in the right-click menu) lists the code editors installed on this
@@ -57,6 +57,16 @@ in the one you pick. To find them it runs `sh` (app folders, `command -v`,
 `flatpak`); on macOS it opens the editor with `open -a` and saves each app's
 icon as a PNG with `plutil` and `sips` under
 `~/.config/herdr-app/data/open-with/`.
+
+The PR panel (`kanso-pr`, the PR button in the tab bar) shows the open pull
+request of the focused pane's branch, as T3 Code does, in the Spend panel's
+style: whether it can merge, checks, unresolved threads and the files with
+their diff. You manage it there: assign it to yourself or others, ask for or
+take back reviews, put labels on and off (T3 Code's searchable pickers), mark
+it ready or back to draft, close, reopen and merge it (a second press
+confirms). It asks your agent to explain it, address feedback or resolve
+conflicts in a new tab. It runs `gh` and `git`, and reaches GitHub only while
+the panel is shown.
 
 Specs (`sdd-focused`, from the minimalistic layout) and Insights are optional:
 install either mod and its button appears in the tab bar.

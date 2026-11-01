@@ -1,0 +1,639 @@
+// Kanso's pull request panel, by jlopezlira (https://github.com/jlopezlira/herdr-kanso). Apache-2.0.
+//
+// The open pull request of the focused pane's branch, read with the GitHub CLI
+// (`gh`), in the spirit of T3 Code's pull request view and drawn the way the
+// Spend panel is: one centered column, no cards or uppercase labels, hierarchy
+// from type size, weight and tone, hairlines between rows, a breathing
+// silhouette while it loads.
+//
+// What it shows: state, readiness, size, assignees, reviewers and labels (each
+// with T3 Code's candidate picker: search, a check on what is applied, a click
+// toggles it and the picker stays open), checks, unresolved review threads and
+// the files with their diff. What it does: merge (a second press confirms),
+// mark ready or back to draft, close or reopen, open it on GitHub, assign it to
+// you, and hand a task (explain, address feedback, resolve conflicts) to your
+// agent in a new tab. A branch without one offers to create it.
+//
+// As the side panel's block it works only while the panel shows it: hidden,
+// it runs nothing and catches up the moment it shows.
+import { View, div, svg } from "gpui-kit";
+import { v_flex, h_flex, Button, Popover, Input, InputState } from "gpui-base";
+import { spaces, panes, focused, exec, knownAgents, notify, run, theme, settings, layout, props } from "herdr";
+
+const ICON = "mods/kanso-chrome/icons/";
+const FIELDS = "number,title,state,isDraft,url,author,baseRefName,headRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews,reviewRequests,assignees,labels,additions,deletions,changedFiles,files,updatedAt";
+const THREADS = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved isOutdated path line comments(first:1){totalCount nodes{author{login} body url}}}}}}}";
+// T3 Code's candidate reads: assignableUsers is GitHub's own picker list (everyone with access),
+// which, unlike `collaborators`, does not need push access to read.
+const PEOPLE = "query($o:String!,$r:String!){viewer{login} repository(owner:$o,name:$r){assignableUsers(first:100){pageInfo{hasNextPage} nodes{login name}}}}";
+const LABELS = "query($o:String!,$r:String!){repository(owner:$o,name:$r){labels(first:100,orderBy:{field:NAME,direction:ASC}){pageInfo{hasNextPage} nodes{name color description}}}}";
+const MAX_DIFF = 400;
+const FILE_ROWS = 8;
+
+// Spend's scale: spacing 4/8/12/16/24, controls 26–30 tall, radius 6.
+const G = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
+
+function tokens(t) {
+  return {
+    canvas: t.canvas ?? t.background, text: t.foreground, muted: t.muted ?? t.dim, dim: t.dim,
+    border: t.border, subtle: t.hover ?? t.raised, popover: t.popover ?? t.surface,
+    primary: t.solid ?? t.foreground, primaryText: t.solid_foreground ?? t.background,
+    red: t.ansi1, green: t.ansi2, yellow: t.ansi3, violet: t.ansi5, mono: settings().font_family ?? "JetBrains Mono",
+  };
+}
+
+function findNode(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) { const found = findNode(child, id); if (found) return found; }
+  return null;
+}
+function panelShows(id) {
+  const tree = layout(), panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
+  const box = panel ?? body;
+  return !box || (!box.hidden && body?.active === id);
+}
+
+function location() {
+  const space = spaces().find((s) => s.active), f = focused();
+  const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
+  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
+  return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
+}
+const key = () => { const { cwd, on } = location(); return JSON.stringify({ cwd, on }); };
+
+function ago(iso) {
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+const clock = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const labelColor = (hex) => { const h = String(hex ?? "").replace(/^#/, ""); return /^[0-9a-fA-F]{6}$/.test(h) ? `#${h}` : null; };
+const openUrl = (url) => exec("open", [url]).catch(() => exec("xdg-open", [url])).catch(() => {});
+
+// One check, as either kind GitHub reports: a check run or a commit status.
+function checkOf(c) {
+  if (c.__typename === "StatusContext") {
+    const st = (c.state ?? "").toUpperCase();
+    return { name: c.context, url: c.targetUrl, state: st === "SUCCESS" ? "pass" : st === "PENDING" || st === "EXPECTED" ? "pending" : "fail" };
+  }
+  const conclusion = (c.conclusion ?? "").toUpperCase();
+  const state = (c.status ?? "").toUpperCase() !== "COMPLETED" ? "pending"
+    : ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(conclusion) ? "pass" : "fail";
+  return { name: c.name, workflow: c.workflowName && c.workflowName !== c.name ? c.workflowName : "", url: c.detailsUrl, state, skipped: conclusion === "SKIPPED" };
+}
+
+function splitDiff(text) {
+  const out = {};
+  let lines = null;
+  for (const line of text.split("\n")) {
+    const head = /^diff --git a\/.* b\/(.*)$/.exec(line);
+    if (head) { lines = out[head[1]] = []; continue; }
+    if (lines && (lines.length || line.startsWith("@@"))) lines.push(line);
+  }
+  return out;
+}
+function diffRows(lines) {
+  let old = 0, next = 0;
+  return lines.slice(0, MAX_DIFF).map((line) => {
+    const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
+    if (m) { old = +m[1]; next = +m[2]; return { kind: "@", text: line }; }
+    const kind = line[0], text = (line.slice(1) || " ").slice(0, 400);
+    if (kind === "-") return { kind, number: old++, text };
+    if (kind === "+") return { kind, number: next++, text };
+    if (kind === " ") { old++; return { kind, number: next++, text }; }
+    return { kind: "", text: line };
+  });
+}
+
+// T3 Code's agent tasks, worded for a pull request reached through `gh`.
+const PROMPTS = {
+  explain: (pr) => `Explain pull request #${pr.number} (${pr.url}). Read the diff (\`gh pr diff ${pr.number}\`) and walk through its purpose, the changes, the risks, and what I should read closely before approving. Do not change any code.`,
+  feedback: (pr) => `Address the actionable feedback and failing checks on pull request #${pr.number} (${pr.url}). Fetch the latest review threads and check results with \`gh\`, skip resolved feedback, and verify each finding before changing code. First confirm this checkout is on ${pr.headRefName}; if it isn't, prepare the branch in its own worktree. Keep the fixes focused and run the relevant checks.`,
+  conflicts: (pr) => `Resolve the conflicts of pull request #${pr.number} (${pr.url}) with its base branch ${pr.baseRefName}. First confirm this checkout is on ${pr.headRefName}; if it isn't, prepare the branch in its own worktree. Bring it up to date using this repository's convention, preserve the intent of both sides, and run the relevant checks before pushing.`,
+};
+const TASK_NAMES = { explain: "Explain", feedback: "Feedback", conflicts: "Conflicts" };
+
+/** A text-only action, as Spend draws choices that should not compete with the numbers. */
+function quietLink(id, label, onClick, c, options = {}) {
+  const disabled = Boolean(options.disabled);
+  return Button.new(id).h(24).items_center().cursor_pointer()
+    .disabled(disabled)
+    .accessibility_label(options.label ?? label)
+    .when(!disabled, (el) => el.hover((s) => s.opacity(0.7)))
+    .on_click((_e, cx) => { if (!disabled) onClick(cx); })
+    .child(div().text_size(options.size ?? 12).text_color(disabled ? c.border : options.color ?? c.muted).child(label));
+}
+
+export default class PullRequest extends View {
+  init(_props, cx) {
+    this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
+    this.expanded = { checks: false, files: false }; this.width = 368;
+    this.picker = null; this.candidates = null; this.query = "";
+    this.search = InputState.new({ placeholder: "Search" });
+    this.search.on("change", (_e, cx) => { this.query = this.search.value(); cx.notify(); });
+    const p = props(); this.inPanel = !p || Object.keys(p).length === 0;
+    this.active = () => !this.inPanel || panelShows("pr");
+    this.wasShown = this.active();
+    this.refresh(cx);
+    // Every minute while shown, every 20 s while a check runs; never under an open picker.
+    cx.timer.every(20000, (cx) => {
+      if (!this.active() || this.picker) return;
+      const pending = this.checks().some((ch) => ch.state === "pending");
+      if (pending || Date.now() - (this.loadedAt ?? 0) > 58000) this.refresh(cx);
+    });
+    cx.timer.every(1000, (cx) => { const now = this.active(); if (now && !this.wasShown) this.refresh(cx); this.wasShown = now; });
+  }
+
+  checks() {
+    const seen = new Set();
+    return (this.pr?.statusCheckRollup ?? []).map(checkOf).filter((ch) => !seen.has(ch.name) && seen.add(ch.name));
+  }
+
+  gh(args) { return exec("gh", args, { cwd: this.root, on: this.on }); }
+  repo() { const m = /github\.com\/([^/]+)\/([^/]+)\/pull\//.exec(this.pr?.url ?? ""); return m ? { o: m[1], r: m[2] } : null; }
+
+  refresh(cx) {
+    if (this.loading || !this.active()) return;
+    const { cwd, on } = location(), context = key();
+    if (context !== this.context) {
+      this.context = context; this.root = null; this.branch = null; this.pr = null; this.threads = []; this.diffs = null;
+      this.openFile = null; this.error = null; this.note = null; this.none = false; this.armed = null; this.picker = null;
+    }
+    if (!cwd) return;
+    this.loading = true;
+    cx.spawn(async (cx) => {
+      try {
+        const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+        if (key() !== context) return;
+        if (top.code !== 0) { this.error = { title: "Not a git repository", detail: "Focus a pane inside a repository to see its pull request." }; this.pr = null; return; }
+        this.root = top.stdout.trim(); this.on = on;
+        const branch = await exec("git", ["branch", "--show-current"], { cwd: this.root, on });
+        this.branch = branch.stdout.trim() || null;
+        let view;
+        try { view = await this.gh(["pr", "view", "--json", FIELDS]); }
+        catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
+        if (key() !== context) return;
+        if (view.code !== 0) {
+          const why = (view.stderr || view.stdout).trim();
+          if (/no (open )?pull requests? found|could not determine current branch/i.test(why)) { this.none = true; this.pr = null; this.error = null; }
+          else { this.error = { title: "GitHub could not be read.", detail: why.split("\n")[0] }; this.pr = null; }
+          return;
+        }
+        const pr = JSON.parse(view.stdout);
+        if (this.pr?.number !== pr.number) { this.diffs = null; this.openFile = null; }
+        this.pr = pr; this.none = false; this.error = null;
+        const repo = this.repo();
+        if (repo) {
+          const q = await this.gh(["api", "graphql", "-f", `query=${THREADS}`, "-F", `o=${repo.o}`, "-F", `r=${repo.r}`, "-F", `n=${pr.number}`]).catch(() => null);
+          if (q?.code === 0 && key() === context) {
+            const nodes = JSON.parse(q.stdout)?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+            this.threads = nodes.filter((n) => !n.isResolved).map((n) => {
+              const first = n.comments?.nodes?.[0];
+              return { path: n.path, line: n.line, outdated: n.isOutdated, author: first?.author?.login ?? "", body: (first?.body ?? "").replace(/\s+/g, " ").trim(), url: first?.url, replies: Math.max(0, (n.comments?.totalCount ?? 1) - 1) };
+            });
+          }
+        }
+        if (!this.viewer) {
+          const me = await this.gh(["api", "user", "--jq", ".login"]).catch(() => null);
+          if (me?.code === 0) this.viewer = me.stdout.trim();
+        }
+      } catch (e) { if (key() === context) this.error = { title: "GitHub could not be read.", detail: String(e?.message ?? e) }; }
+      finally { this.loading = false; this.loadedAt = Date.now(); cx.notify(); }
+    });
+  }
+
+  // ---- actions ----
+
+  act(label, args, cx) {
+    if (this.busy) return;
+    this.busy = label; this.note = null; this.armed = null;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await this.gh(args);
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n")[0]);
+      } catch (e) { this.note = `${label} failed: ${String(e?.message ?? e)}`; }
+      finally { this.busy = null; this.loadedAt = 0; cx.notify(); this.refresh(cx); }
+    });
+    cx.notify();
+  }
+
+  // The second press within 4 s merges, with the first method the repository allows.
+  merge(cx) {
+    if (this.armed !== "merge" || Date.now() - this.armedAt > 4000) { this.armed = "merge"; this.armedAt = Date.now(); cx.notify(); return; }
+    const pr = this.pr;
+    this.busy = "Merge"; this.armed = null; this.note = null;
+    cx.spawn(async (cx) => {
+      try {
+        const repo = await this.gh(["repo", "view", "--json", "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed"]);
+        const allowed = repo.code === 0 ? JSON.parse(repo.stdout) : {};
+        const method = allowed.squashMergeAllowed !== false ? "--squash" : allowed.mergeCommitAllowed ? "--merge" : "--rebase";
+        const r = await this.gh(["pr", "merge", String(pr.number), method]);
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n")[0]);
+        notify({ title: `Merged #${pr.number}`, body: pr.title, level: "success" });
+      } catch (e) { this.note = `Merge failed: ${String(e?.message ?? e)}`; }
+      finally { this.busy = null; this.loadedAt = 0; cx.notify(); this.refresh(cx); }
+    });
+    cx.notify();
+  }
+
+  createPr(cx) {
+    if (this.busy) return;
+    this.busy = "Create"; this.note = null;
+    cx.spawn(async (cx) => {
+      try {
+        const up = await exec("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { cwd: this.root, on: this.on });
+        if (up.code !== 0) throw new Error(`push ${this.branch ?? "the branch"} first; it has no upstream`);
+        const r = await this.gh(["pr", "create", "--web"]);
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n")[0]);
+      } catch (e) { this.note = `Could not create it: ${String(e?.message ?? e)}`; }
+      finally { this.busy = null; cx.notify(); }
+    });
+    cx.notify();
+  }
+
+  agentTask(task) {
+    const pr = this.pr, root = this.root, on = this.on, space = location().space;
+    knownAgents({ on }).then((list) => {
+      const agent = list.find((a) => a.installed);
+      if (!agent) throw new Error("no agent is installed");
+      run("tab.new", { name: `#${pr.number} ${TASK_NAMES[task]}`, space, folder: root, argv: agent.run, task: PROMPTS[task](pr) });
+    }).catch((e) => notify({ title: "Could not start the agent", body: String(e?.message ?? e), level: "error" }));
+  }
+
+  // ---- T3 Code's candidate pickers: assignees, reviewers, labels ----
+
+  openPicker(kind, open, cx) {
+    this.picker = open ? kind : null;
+    this.query = ""; this.search.set_value("");
+    this.candidates = null; this.pickerError = null; this.truncated = false;
+    if (open) {
+      this.search.focus();
+      const repo = this.repo(), context = this.context;
+      cx.spawn(async (cx) => {
+        try {
+          const q = kind === "labels" ? LABELS : PEOPLE;
+          const r = await this.gh(["api", "graphql", "-f", `query=${q}`, "-F", `o=${repo.o}`, "-F", `r=${repo.r}`]);
+          if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n")[0]);
+          if (this.context !== context || this.picker !== kind) return;
+          const data = JSON.parse(r.stdout).data;
+          if (data?.viewer?.login) this.viewer = data.viewer.login;
+          const list = kind === "labels" ? data.repository.labels : data.repository.assignableUsers;
+          this.truncated = Boolean(list.pageInfo?.hasNextPage);
+          this.candidates = list.nodes;
+        } catch (e) { this.pickerError = String(e?.message ?? e); }
+        cx.notify();
+      });
+    }
+    cx.notify();
+  }
+
+  applied(kind) {
+    const pr = this.pr;
+    if (kind === "labels") return new Set((pr.labels ?? []).map((l) => l.name));
+    if (kind === "assignees") return new Set((pr.assignees ?? []).map((a) => a.login));
+    return new Set((pr.reviewRequests ?? []).map((r) => r.login).filter(Boolean));
+  }
+
+  // Applies or takes back one candidate through the REST API; the picker stays open, as in T3 Code.
+  toggle(kind, name, on, cx) {
+    if (this.pending) return;
+    const { o, r } = this.repo(), n = this.pr.number;
+    const call = {
+      labels: on ? ["-X", "DELETE", `repos/${o}/${r}/issues/${n}/labels/${encodeURIComponent(name)}`] : ["-X", "POST", `repos/${o}/${r}/issues/${n}/labels`, "-f", `labels[]=${name}`],
+      assignees: ["-X", on ? "DELETE" : "POST", `repos/${o}/${r}/issues/${n}/assignees`, "-f", `assignees[]=${name}`],
+      reviewers: ["-X", on ? "DELETE" : "POST", `repos/${o}/${r}/pulls/${n}/requested_reviewers`, "-f", `reviewers[]=${name}`],
+    }[kind];
+    const done = { assignees: on ? `Unassigned ${name}` : `Assigned ${name}`, reviewers: on ? `Review request to ${name} taken back` : `Review requested from ${name}` }[kind];
+    const failed = { labels: on ? `Could not take ${name} off` : `Could not put ${name} on`, assignees: on ? `Could not unassign ${name}` : `Could not assign ${name}`, reviewers: on ? `Could not take back the request to ${name}` : `Could not ask ${name} for a review` }[kind];
+    const why = { labels: "Changing labels needs triage access on this repository.", assignees: "Assigning needs triage access on this repository.", reviewers: "Asking for a review needs write access on this repository." }[kind];
+    this.pending = name;
+    cx.spawn(async (cx) => {
+      try {
+        const res = await this.gh(["api", ...call, "--silent"]);
+        if (res.code !== 0) throw new Error((res.stderr || res.stdout).trim().split("\n")[0]);
+        // Reflect it at once; the reread below confirms it.
+        const pr = this.pr;
+        if (kind === "labels") pr.labels = on ? pr.labels.filter((l) => l.name !== name) : [...pr.labels, (this.candidates ?? []).find((l) => l.name === name) ?? { name }];
+        if (kind === "assignees") pr.assignees = on ? pr.assignees.filter((a) => a.login !== name) : [...pr.assignees, { login: name }];
+        if (kind === "reviewers") pr.reviewRequests = on ? pr.reviewRequests.filter((x) => x.login !== name) : [...pr.reviewRequests, { login: name }];
+        if (done) notify({ title: done, level: "success" });
+      } catch (e) { notify({ title: failed, body: `${String(e?.message ?? e)} ${why}`, level: "error" }); }
+      finally { this.pending = null; cx.notify(); this.loadedAt = 0; this.refresh(cx); }
+    });
+    cx.notify();
+  }
+
+  pickerFor(kind, c) {
+    const id = `pr-pick-${kind}`;
+    const label = { labels: "Change labels", assignees: "Assign people", reviewers: "Request a review" }[kind];
+    const trigger = Button.new(`${id}-trigger`).size(22).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
+      .accessibility_label(label).tooltip(label)
+      .hover((s) => s.bg(c.subtle))
+      .child(svg(`${ICON}${kind === "labels" ? "tag" : "user-plus"}.svg`).size(13).text_color(c.muted));
+    const popover = Popover.new(id).trigger(trigger).anchor("top_right")
+      .open(this.picker === kind)
+      .on_open_change((open, cx) => this.openPicker(kind, open, cx));
+    if (this.picker !== kind) return popover;
+    const applied = this.applied(kind), q = this.query.toLowerCase();
+    const author = this.pr.author?.login;
+    const all = (this.candidates ?? []).filter((x) => kind !== "reviewers" || x.login !== author);
+    const shown = all.filter((x) => !q || [x.name, x.login, x.description].some((v) => String(v ?? "").toLowerCase().includes(q)));
+    const empty = { labels: "This repository has no labels.", assignees: "Nobody has access to this repository.", reviewers: "Nobody else has access to this repository." }[kind];
+    const noMatch = kind === "labels" ? "No label matches that." : "Nobody with access matches that.";
+    const list = v_flex().gap(1)
+      .when(!this.candidates && !this.pickerError, (el) => el.child(v_flex().loop("opacity", { from: 0.35, to: 0.8, period: 1800 })
+        .children([90, 120, 70, 104].map((w, i) => h_flex().id(`${id}-ghost-${i}`).px(8).py(7).gap(G.sm).child(div().size(8).rounded_full().bg(c.border)).child(div().w(w).h(9).rounded(3).bg(c.border))))))
+      .when(Boolean(this.pickerError), (el) => el.child(div().p(8).text_size(11.5).text_color(c.dim).child(`${kind === "labels" ? "The labels" : "The people with access"} could not be read. ${this.pickerError}`)))
+      .when(Boolean(this.candidates) && shown.length === 0, (el) => el.child(div().p(8).text_size(11.5).text_color(c.dim).child(q ? noMatch : empty)))
+      .children(shown.map((x, i) => {
+        const name = kind === "labels" ? x.name : x.login, on = applied.has(name), color = kind === "labels" ? labelColor(x.color) : null;
+        return Button.new(`${id}-${i}`).w_full().px(8).py(5).gap(G.sm).items_center().rounded(6).cursor_pointer()
+          .disabled(Boolean(this.pending))
+          .hover((s) => s.bg(c.subtle))
+          .accessibility_label(name)
+          .on_click((_e, cx) => this.toggle(kind, name, on, cx))
+          .when(kind === "labels", (el) => el.child(div().size(8).flex_none().rounded_full().bg(color ?? c.dim)))
+          .child(h_flex().flex_1().min_w(0).gap(4)
+            .child(div().flex_none().text_size(12).text_color(c.text).child(name))
+            .when(kind !== "labels" && Boolean(x.name) && x.name !== x.login, (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(c.dim).child(x.name)))
+            .when(kind === "labels" && Boolean(x.description), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(c.dim).child(`· ${x.description}`))))
+          .child(div().w(14).flex_none().text_size(12).text_color(c.text).child(this.pending === name ? "…" : on ? "✓" : ""));
+      }))
+      .when(this.truncated, (el) => el.child(div().px(8).py(6).text_size(11).text_color(c.dim)
+        .child(kind === "labels" ? "This repository has more labels than are listed here. Apply the rest on GitHub." : "This repository has more people with access than are listed here. Ask for the rest on GitHub.")));
+    // The list sizes to its rows up to 290 px, then scrolls; a flex share would collapse it to nothing.
+    return popover.content(v_flex().w(288).p(G.xs).gap(G.xs).rounded(8).bg(c.popover).border_1().border_color(c.border)
+      .child(div().h(30).flex_none().px(8).flex().items_center().rounded(6).border_1().border_color(c.border)
+        .child(Input.new(this.search).flex_1().h_full().text_size(12).text_color(c.text)))
+      .child(div().id(`${id}-list`).w_full().max_h(290).overflow_y_scrollbar().child(list)));
+  }
+
+  // ---- drawing, as Spend draws ----
+
+  iconButton(id, icon, tip, onClick, c, spin) {
+    const glyph = svg(`${ICON}${icon}.svg`).size(15).text_color(spin ? c.text : c.muted);
+    return Button.new(id).size(26).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
+      .accessibility_label(tip).tooltip(tip)
+      .hover((s) => s.bg(c.subtle))
+      .on_click((_e, cx) => onClick(cx))
+      .child(spin ? glyph.spin(900) : glyph);
+  }
+
+  header(c, narrow) {
+    const pr = this.pr;
+    return h_flex().w_full().items_center().justify_between().gap(G.md)
+      .child(div().truncate().text_size(narrow ? 17 : 20).text_color(c.text).child("Pull request"))
+      .child(h_flex().gap(G.xs).items_center().flex_none()
+        .child(this.iconButton("pr-refresh", "refresh", this.loadedAt ? `Refresh · updated ${clock(this.loadedAt)}` : "Refresh", (cx) => { this.loadedAt = 0; this.refresh(cx); }, c, this.loading))
+        .when(Boolean(pr), (el) => el.child(this.iconButton("pr-web", "open-with", "Open on GitHub", () => openUrl(pr.url), c))));
+  }
+
+  skeleton(c, narrow) {
+    const block = (w, h, r = 3) => div().w(w).h(h).flex_none().rounded(r).bg(c.border);
+    const row = (i) => h_flex().w_full().items_center().gap(G.md).py(9).child(block([120, 96, 140, 84, 110][i % 5], 9)).child(div().flex_1()).child(block(36, 11));
+    return v_flex().w_full().gap(narrow ? 36 : 48).loop("opacity", { from: 0.35, to: 0.8, period: 1800 })
+      .child(v_flex().gap(G.md).child(block(140, 12)).child(block(narrow ? 240 : 420, narrow ? 22 : 28, 4)).child(block(180, 22, 4)).child(block(150, 11))
+        .child(h_flex().gap(narrow ? G.xl : 48).pt(G.md).children([30, 46, 40, 30].map((w) => block(w, narrow ? 18 : 22, 4)))))
+      .child(v_flex().gap(G.sm).children([0, 1, 2].map((i) => h_flex().gap(G.md).child(block(70, 10)).child(block([90, 120, 80][i], 10)))))
+      .child(v_flex().w_full().child(h_flex().pb(G.sm).child(block(70, 12))).children([0, 1, 2, 3, 4].map(row)));
+  }
+
+  waiting(c, title, detail, action) {
+    return v_flex().w_full().gap(G.sm)
+      .child(div().text_size(15).text_color(this.error ? c.red : c.muted).child(title))
+      .when(Boolean(detail), (el) => el.child(div().text_size(12).text_color(c.dim).child(detail)))
+      .when(Boolean(action), (el) => el.child(h_flex().pt(G.xs).child(action)));
+  }
+
+  section(c, title, note) {
+    return h_flex().w_full().items_end().justify_between().pb(G.sm)
+      .child(div().text_size(15).text_color(c.text).child(title))
+      .child(div().text_size(12).text_color(c.dim).child(note ?? ""));
+  }
+
+  verdict(c) {
+    const pr = this.pr, checks = this.checks();
+    const failing = checks.filter((x) => x.state === "fail").length, running = checks.filter((x) => x.state === "pending").length;
+    const conflicting = pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY", ms = pr.mergeStateStatus;
+    if (pr.state === "MERGED") return { text: "Merged", color: c.violet };
+    if (pr.state === "CLOSED") return { text: "Closed without merging", color: c.red };
+    if (pr.isDraft) return { text: "Draft, not ready for review", color: c.dim };
+    if (conflicting) return { text: `Conflicts with ${pr.baseRefName}`, color: c.red };
+    if (failing) return { text: `${failing} check${failing > 1 ? "s" : ""} failing`, color: c.red };
+    if (pr.reviewDecision === "CHANGES_REQUESTED") return { text: "Changes requested", color: c.red };
+    if (running) return { text: `${running} check${running > 1 ? "s" : ""} running`, color: c.yellow };
+    if (ms === "BLOCKED") return { text: pr.reviewDecision === "REVIEW_REQUIRED" ? "Waiting for a review" : "Blocked by branch rules", color: c.yellow };
+    if (ms === "BEHIND") return { text: `Behind ${pr.baseRefName}`, color: c.yellow };
+    if (ms === "CLEAN" || ms === "HAS_HOOKS" || ms === "UNSTABLE") return { text: "Ready to merge", color: c.green };
+    return { text: "Checking whether it can merge…", color: c.dim };
+  }
+
+  hero(c, narrow) {
+    const pr = this.pr, v = this.verdict(c), open = pr.state === "OPEN";
+    const conflicting = pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY", ms = pr.mergeStateStatus;
+    const canMerge = open && !pr.isDraft && !conflicting && ms !== "BLOCKED" && ms !== "DRAFT";
+    const arming = this.armed === "merge" && Date.now() - this.armedAt <= 4000;
+    const checks = this.checks();
+    const stats = [
+      { value: String(pr.changedFiles), unit: pr.changedFiles === 1 ? "file" : "files" },
+      { value: `+${pr.additions}`, unit: "added" },
+      { value: `−${pr.deletions}`, unit: "removed" },
+      { value: String(this.threads.length), unit: this.threads.length === 1 ? "thread" : "threads" },
+      { value: String(checks.length), unit: checks.length === 1 ? "check" : "checks" },
+    ];
+    const primary = Button.new("pr-merge").h(30).px(14).flex_none().items_center().rounded(6)
+      .disabled(!canMerge || Boolean(this.busy))
+      .bg(canMerge ? (arming ? c.red : c.primary) : c.subtle)
+      .when(canMerge && !this.busy, (el) => el.cursor_pointer().hover((s) => s.opacity(0.85)))
+      .on_click((_e, cx) => { if (canMerge && !this.busy) this.merge(cx); })
+      .child(div().text_size(12).font_medium().text_color(canMerge ? (arming ? "#ffffff" : c.primaryText) : c.dim)
+        .child(this.busy === "Merge" ? "Merging…" : arming ? "Press again to merge" : "Merge"));
+    return v_flex().w_full().gap(G.xl)
+      .child(v_flex().gap(G.xs)
+        .child(div().text_size(15).text_color(c.muted).child(`#${pr.number} · ${pr.headRefName} → ${pr.baseRefName}`))
+        .child(div().w_full().text_size(narrow ? 22 : 28).line_height(1.25).font_light().text_color(c.text).child(pr.title))
+        .child(h_flex().pt(G.xs).gap(G.sm).items_center()
+          .child(div().size(6).flex_none().rounded_full().bg(v.color).when(v.color === c.yellow, (el) => el.loop("opacity", { from: 0.35, to: 1, period: 2400 })))
+          .child(div().text_size(15).text_color(c.text).child(v.text)))
+        .child(div().text_size(12).text_color(c.dim).child(`${pr.author?.login ?? ""} · updated ${ago(pr.updatedAt)}`)))
+      .child(h_flex().w_full().flex_wrap().gap_x(narrow ? G.xl : 48).gap_y(G.lg)
+        .children(stats.map((s) => h_flex().items_end().gap(6)
+          .child(div().text_size(narrow ? 22 : 28).line_height(1).font_light().text_color(c.text).child(s.value))
+          .child(div().pb(3).text_size(12).text_color(c.dim).child(s.unit)))))
+      .when(open, (el) => el.child(h_flex().w_full().flex_wrap().gap_x(G.lg).gap_y(G.sm).items_center()
+        .child(primary)
+        .child(pr.isDraft
+          ? quietLink("pr-ready", this.busy === "Ready" ? "Marking ready…" : "Ready for review", (cx) => this.act("Ready", ["pr", "ready", String(pr.number)], cx), c, { disabled: Boolean(this.busy) })
+          : quietLink("pr-draft", "Back to draft", (cx) => this.act("Draft", ["pr", "ready", String(pr.number), "--undo"], cx), c, { disabled: Boolean(this.busy) }))
+        .child(quietLink("pr-close", "Close", (cx) => this.act("Close", ["pr", "close", String(pr.number)], cx), c, { disabled: Boolean(this.busy) }))))
+      .when(pr.state === "CLOSED", (el) => el.child(h_flex().child(quietLink("pr-reopen", "Reopen", (cx) => this.act("Reopen", ["pr", "reopen", String(pr.number)], cx), c, { disabled: Boolean(this.busy) }))))
+      .when(Boolean(this.note), (el) => el.child(div().text_size(12).text_color(c.red).child(this.note)));
+  }
+
+  // Who and what it carries, in T3 Code's meta rows: a quiet label column, the values, a picker.
+  people(c) {
+    const pr = this.pr, open = pr.state === "OPEN";
+    const metaRow = (label, values, picker, extra) => h_flex().w_full().min_h(28).gap(G.md).items_center()
+      .child(div().w(76).flex_none().text_size(12).text_color(c.dim).child(label))
+      .child(h_flex().flex_1().min_w(0).flex_wrap().gap(6).items_center()
+        .children(values.length ? values : [div().text_size(13).text_color(c.dim).child("None")])
+        .when(Boolean(extra), (el) => el.child(extra)))
+      .when(Boolean(picker), (el) => el.child(picker));
+    const person = (login, sub, color) => h_flex().gap(4).items_center()
+      .when(Boolean(color), (el) => el.child(div().size(6).rounded_full().bg(color)))
+      .child(div().text_size(13).text_color(c.text).child(login))
+      .when(Boolean(sub), (el) => el.child(div().text_size(11).text_color(c.dim).child(sub)));
+    const assignees = (pr.assignees ?? []).map((a) => person(a.login));
+    const mine = this.viewer && (pr.assignees ?? []).some((a) => a.login === this.viewer);
+    // Reviewers: who reviewed, with the outcome, then who is still asked.
+    const outcome = { APPROVED: ["approved", c.green], CHANGES_REQUESTED: ["changes", c.red], COMMENTED: ["commented", null], DISMISSED: ["dismissed", null] };
+    const reviewed = (pr.latestReviews ?? []).filter((r) => r.author?.login).map((r) => person(r.author.login, outcome[r.state]?.[0] ?? String(r.state).toLowerCase(), outcome[r.state]?.[1]));
+    const asked = (pr.reviewRequests ?? []).map((r) => person(r.login ?? r.name ?? r.slug, r.login ? "requested" : "team · requested", c.yellow));
+    // Labels in their own color, as T3 Code's label chips.
+    const labels = (pr.labels ?? []).map((l) => {
+      const color = labelColor(l.color) ?? c.dim;
+      return h_flex().h(22).px(8).gap(5).items_center().rounded(11).bg(color + "26")
+        .child(div().size(6).rounded_full().bg(color))
+        .child(div().max_w(160).truncate().text_size(11.5).text_color(c.text).child(l.name));
+    });
+    const decision = { APPROVED: "Approved", CHANGES_REQUESTED: "Changes requested", REVIEW_REQUIRED: "Review required" }[pr.reviewDecision] ?? "";
+    return v_flex().w_full()
+      .child(this.section(c, "People and labels", decision))
+      .child(v_flex().w_full().gap(G.xs)
+        .child(metaRow("Assignees", assignees, open ? this.pickerFor("assignees", c) : null,
+          open && this.viewer && !mine ? quietLink("pr-assign-me", "Assign to me", (cx) => this.toggle("assignees", this.viewer, false, cx), c, { disabled: Boolean(this.pending) }) : null))
+        .child(metaRow("Reviewers", [...reviewed, ...asked], open ? this.pickerFor("reviewers", c) : null))
+        .child(metaRow("Labels", labels, open ? this.pickerFor("labels", c) : null)));
+  }
+
+  checksList(c) {
+    const checks = this.checks();
+    const failing = checks.filter((x) => x.state === "fail"), running = checks.filter((x) => x.state === "pending"), passed = checks.length - failing.length - running.length;
+    const order = { fail: 0, pending: 1, pass: 2 };
+    const sorted = [...checks].sort((a, b) => order[a.state] - order[b.state]);
+    const open = this.expanded.checks, shown = open ? sorted : sorted.slice(0, 5);
+    const note = [failing.length && `${failing.length} failing`, running.length && `${running.length} running`, passed && `${passed} passed`].filter(Boolean).join(" · ");
+    return v_flex().w_full()
+      .child(this.section(c, "Checks", note))
+      .children(shown.map((ch, i) => Button.new(`pr-check-${i}`).w_full().py(7).cursor_pointer()
+        .when(i > 0, (el) => el.border_t(1).border_color(c.border))
+        .hover((s) => s.opacity(0.75))
+        .on_click(() => { if (ch.url) openUrl(ch.url); })
+        .child(h_flex().w_full().items_end().gap(G.md)
+          .child(v_flex().flex_1().min_w(0).gap(2)
+            .child(div().truncate().text_size(13).text_color(c.text).child(ch.name))
+            .when(Boolean(ch.workflow), (el) => el.child(div().truncate().text_size(11).text_color(c.dim).child(ch.workflow))))
+          .child(div().text_size(12).text_color(ch.state === "fail" ? c.red : ch.state === "pending" ? c.yellow : c.dim)
+            .child(ch.state === "fail" ? "failed" : ch.state === "pending" ? "running" : ch.skipped ? "skipped" : "passed")))))
+      .when(sorted.length > 5, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-checks-more", open ? "Show fewer" : `Show ${sorted.length - 5} more`, (cx) => { this.expanded.checks = !open; cx.notify(); }, c))));
+  }
+
+  discussion(c) {
+    return v_flex().w_full()
+      .child(this.section(c, "Unresolved threads", String(this.threads.length)))
+      .children(this.threads.map((th, i) => Button.new(`pr-thread-${i}`).w_full().py(8).cursor_pointer()
+        .when(i > 0, (el) => el.border_t(1).border_color(c.border))
+        .hover((s) => s.opacity(0.75))
+        .on_click(() => { if (th.url) openUrl(th.url); })
+        .child(v_flex().w_full().gap(3)
+          .child(div().w_full().text_size(13).line_height(1.45).text_color(c.text).child(th.body.length > 240 ? th.body.slice(0, 240) + "…" : th.body))
+          .child(h_flex().w_full().flex_wrap().gap_x(G.md)
+            .child(div().text_size(11).text_color(c.dim).child(`${th.path}${th.line ? `:${th.line}` : ""}`))
+            .child(div().text_size(11).text_color(c.dim).child(th.author))
+            .when(th.replies > 0, (el) => el.child(div().text_size(11).text_color(c.dim).child(`${th.replies} repl${th.replies > 1 ? "ies" : "y"}`)))
+            .when(th.outdated, (el) => el.child(div().text_size(11).text_color(c.dim).child("outdated")))))));
+  }
+
+  agent(c) {
+    const pr = this.pr, open = pr.state === "OPEN";
+    const conflicting = pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY";
+    return v_flex().w_full()
+      .child(this.section(c, "Ask your agent", "in a new tab"))
+      .child(h_flex().w_full().flex_wrap().gap_x(G.lg).gap_y(G.xs)
+        .child(quietLink("pr-explain", "Explain it", () => this.agentTask("explain"), c, { size: 13, color: c.text }))
+        .child(quietLink("pr-feedback", "Address feedback", () => this.agentTask("feedback"), c, { size: 13, color: c.text, disabled: !open }))
+        .child(quietLink("pr-conflicts", "Resolve conflicts", () => this.agentTask("conflicts"), c, { size: 13, color: c.text, disabled: !(open && conflicting) })));
+  }
+
+  diffView(c, path) {
+    if (this.diffLoading && !this.diffs) return div().py(6).text_size(11).text_color(c.dim).child("Reading the diff…");
+    const lines = this.diffs?.[path];
+    if (!lines) return div().py(6).text_size(11).text_color(c.dim).child(this.diffs ? "No text diff for this file." : "");
+    return v_flex().w_full().mb(G.sm).rounded(6).border_1().border_color(c.border).overflow_hidden().font_family(c.mono).text_size(11)
+      .children(diffRows(lines).map((r) => r.kind === "@"
+        ? div().h(20).px(10).flex_none().truncate().text_color(c.dim).child(r.text)
+        : h_flex().h(20).flex_none().gap(8).when(r.kind === "+", (e) => e.bg(c.green + "18")).when(r.kind === "-", (e) => e.bg(c.red + "18"))
+          .child(div().w(30).flex_none().text_right().text_color(c.dim).child(r.number === undefined ? "" : String(r.number)))
+          .child(div().flex_1().min_w(0).truncate().text_color(c.text).child(r.text))))
+      .when(lines.length > MAX_DIFF, (el) => el.child(div().px(10).py(4).text_color(c.dim).child(`The first ${MAX_DIFF} lines; the rest is on GitHub.`)));
+  }
+
+  pickFile(path, cx) {
+    this.openFile = this.openFile === path ? null : path;
+    if (this.openFile && !this.diffs && this.pr) {
+      const number = this.pr.number, context = this.context;
+      this.diffLoading = true;
+      cx.spawn(async (cx) => {
+        try {
+          const r = await this.gh(["pr", "diff", String(number), "--color", "never"]);
+          if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+          if (this.context === context && this.pr?.number === number) this.diffs = splitDiff(r.stdout);
+        } catch (e) { this.note = `Could not read the diff: ${String(e?.message ?? e).split("\n")[0]}`; }
+        finally { this.diffLoading = false; cx.notify(); }
+      });
+    }
+    cx.notify();
+  }
+
+  files(c) {
+    const pr = this.pr, files = pr.files ?? [], open = this.expanded.files;
+    const shown = open ? files : files.slice(0, FILE_ROWS);
+    return v_flex().w_full()
+      .child(this.section(c, "Files", `${pr.changedFiles} · +${pr.additions} −${pr.deletions}`))
+      .children(shown.map((f, i) => {
+        const parts = f.path.split("/"), name = parts.pop(), on = this.openFile === f.path;
+        const mark = { ADDED: "added", DELETED: "deleted", RENAMED: "renamed" }[f.changeType] ?? "";
+        return v_flex().w_full().when(i > 0, (el) => el.border_t(1).border_color(c.border))
+          .child(Button.new(`pr-file-${i}`).w_full().py(7).cursor_pointer().hover((s) => s.opacity(0.75))
+            .on_click((_e, cx) => this.pickFile(f.path, cx))
+            .child(h_flex().w_full().items_end().gap(G.md)
+              .child(v_flex().flex_1().min_w(0).gap(2)
+                .child(div().truncate().text_size(13).text_color(c.text).when(on, (e) => e.font_medium()).child(name))
+                .when(parts.length > 0 || Boolean(mark), (el) => el.child(div().truncate().text_size(11).text_color(c.dim).child([parts.join("/"), mark].filter(Boolean).join(" · ")))))
+              .child(div().text_size(11).text_color(c.dim).child(`+${f.additions} −${f.deletions}`))))
+          .when(on, (el) => el.child(this.diffView(c, f.path)));
+      }))
+      .when(files.length > FILE_ROWS, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-files-more", open ? "Show fewer" : `Show ${files.length - FILE_ROWS} more`, (cx) => { this.expanded.files = !open; cx.notify(); }, c))))
+      .when(files.length < pr.changedFiles, (el) => el.child(div().pt(G.sm).text_size(11).text_color(c.dim).child(`GitHub lists the first ${files.length} of ${pr.changedFiles} files.`)));
+  }
+
+  render(cx) {
+    if (key() !== this.context && this.active()) this.refresh(cx);
+    const c = tokens(theme());
+    const narrow = (this.width || 368) < 560;
+    let body;
+    if (this.pr) {
+      body = v_flex().w_full().gap(narrow ? 36 : 48)
+        .child(this.hero(c, narrow))
+        .child(this.people(c))
+        .when(this.checks().length > 0, (el) => el.child(this.checksList(c)))
+        .when(this.threads.length > 0, (el) => el.child(this.discussion(c)))
+        .child(this.agent(c))
+        .child(this.files(c))
+        .child(div().text_size(10.5).text_color(c.dim).child(`Read from GitHub with gh${this.loadedAt ? ` · updated ${clock(this.loadedAt)}` : ""}. It rereads every minute while shown, every 20 s while a check runs.`));
+    } else if (this.error) body = this.waiting(c, this.error.title, this.error.detail, quietLink("pr-retry", "Try again", (cx) => { this.loadedAt = 0; this.refresh(cx); }, c));
+    else if (this.none) body = this.waiting(c, `No pull request for ${this.branch ?? "this branch"}.`,
+      this.note ?? "Push the branch, then open one on GitHub.",
+      quietLink("pr-create", this.busy === "Create" ? "Opening GitHub…" : "Create it on GitHub", (cx) => this.createPr(cx), c, { size: 13, color: c.text, disabled: Boolean(this.busy) }));
+    else body = this.loading || !this.context ? this.skeleton(c, narrow) : this.waiting(c, "No folder", "Focus a pane inside a repository.");
+
+    return v_flex().id("kanso-pr").size_full().min_h(0).bg(c.canvas).text_color(c.text).overflow_y_scrollbar()
+      .on_size_change((size, sizeCx) => { if (Math.abs((this.width || 0) - size.width) >= 1) { this.width = size.width; sizeCx.notify(); } })
+      .child(h_flex().w_full().justify_center().px(narrow ? G.lg : 32).py(narrow ? G.lg : 28)
+        .child(v_flex().w_full().max_w(1080).gap(narrow ? 32 : 44)
+          .child(this.header(c, narrow))
+          .child(body)));
+  }
+}

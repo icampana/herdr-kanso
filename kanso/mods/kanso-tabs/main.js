@@ -24,7 +24,7 @@ function specsBadge(space, t) {
 // the open one. Closing removes it from the layout, so Herdr ends that mod
 // (its timers, watches and processes stop); opening adds a fresh copy. Nothing
 // you aren't looking at runs.
-const PANELS = { files: "kanso-files", insights: "token-spend", changes: "kanso-changes", specs: "sdd-focused" };
+const PANELS = { files: "kanso-files", insights: "token-spend", changes: "kanso-changes", pr: "kanso-pr", specs: "sdd-focused" };
 
 const TAB_H = 26; // inside the 2px padding of the pill, so the pill is 30px
 const CLEAR = "#00000000";
@@ -152,7 +152,8 @@ export default class Tabs extends View {
     const panel = find(tree, "panel"), body = find(tree, "panel-body");
     const now = this.openPanel(panel, body);
     // Specs and Insights, where installed, are offered beside the panels the welcome chose.
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), ...Object.keys(this.installed)];
+    // The PR panel ships with Kanso, so it is always offered.
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", ...Object.keys(this.installed)];
     this.reconcile(space, panel, body, now);
     this.syncPanel(space, now, enabled);
     const panelButton = (id, label, icon, extra) => {
@@ -178,6 +179,8 @@ export default class Tabs extends View {
       // Insights (costs per model, project and task) opens in the side panel like Files.
       .when(Boolean(this.installed.insights), el => el.child(panelButton("insights", "Spend", "mods/kanso-chrome/icons/chart.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/kanso-chrome/icons/changes.svg")))
+      // The open pull request of the focused branch: status, checks, reviews, threads, files, agent tasks.
+      .child(panelButton("pr", "PR", "mods/kanso-chrome/icons/pull-request.svg"))
       .when(Boolean(this.installed.specs), el => el.child(panelButton("specs", "Specs", "mods/kanso-chrome/icons/file-text.svg", specsExtra)))
       .when(window()?.buttons, el => el.child(button("minimize", "−", () => run("window.minimize")))
         .child(button("maximize", "□", () => run("window.maximize")))
