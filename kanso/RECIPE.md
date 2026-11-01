@@ -187,9 +187,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - Drag a space to reorder it (a 2px `accent` line shows where it lands).
     Right-click opens the shipped space menu.
   - Click an agent row to focus its pane.
-  - Agents that don't report a status to Herdr (Codex, for one) are listed
-    too: panes whose program is one of `knownAgents()`, after the reporting
-    ones, with the idle ring.
+  - Every terminal in the space is listed, not only the agents that report
+    a status to Herdr: after those come the rest (Codex and other models'
+    CLIs, shells, servers) with their program's icon, their title (a shell's
+    folder when the title says nothing) and no status mark.
 - **Sidebar**:
   - Hide sidebar collapses it to a fixed 76 rail whose edge cannot be
     dragged.
