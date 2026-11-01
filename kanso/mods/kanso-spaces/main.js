@@ -7,7 +7,7 @@
 // its first terminal is in now, only where unusual: branch, ahead/behind. Its agents are listed under it (agents.js). Click to
 // switch, right-click for its menu, drag to reorder.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agentRow, agentFold, withTerminals } from "./agents.js";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
@@ -495,13 +495,19 @@ export default class Spaces extends View {
     const plus = quiet("space-new", "plus", "New space", () => run("space.new"));
     const hide = quiet("sidebar-toggle", "sidebar", collapsed ? "Show sidebar" : "Hide sidebar", toggle);
     const search = quiet("search", "search", "Search", () => run("mod.open", { name: "picker" }));
-    // One row when open: + at the left, search and hide at the right, same size.
-    // Collapsed, stack them so two buttons never sit on top of each other.
+    // Herdr's mark at the top, as in its own layout, so you know what you're in.
+    const brand = h_flex().id("brand").gap(8).items_center().flex_none()
+      .child(image("frame/welcome/herdr.png").size(20).rounded(5))
+      .when(!collapsed, (el) => el.child(div().font_semibold().text_color(t.foreground).child("Herdr")));
+    // One row when open: the mark at the left; new space, search and hide at
+    // the right, same size. Collapsed, the mark over the buttons, stacked so
+    // two never sit on top of each other.
     const add = collapsed
-      ? v_flex().w_full().pt(4).gap(4).items_center().child(plus).child(hide)
-      : h_flex().h(40).px(10).gap(4).items_center()
-        .child(plus)
+      ? v_flex().w_full().pt(8).gap(6).items_center().child(brand).child(plus).child(hide)
+      : h_flex().h(40).pl(14).pr(10).gap(4).items_center()
+        .child(brand)
         .child(div().flex_1())
+        .child(plus)
         .child(search)
         .child(hide);
     return v_flex().id("spaces-root").size_full().min_h(0).bg(t.chrome).text_size(13)
