@@ -158,7 +158,10 @@ export default class Pane extends View {
     const drag = strip ? shared("strip.drag") : null;
     const dropping = Boolean(drag && drag.pane !== pane && this.hovered);
     const side = this.dropSide ?? "after";
-    const ink = on || st === "blocked"; // full ink: the selected pane, and one that needs you
+    const ink = on || st === "blocked";
+    // A pinned pane stays on its side of the view: a pin by its title says so.
+    const pinned = strip && Boolean(shared("strip.state")?.[p.tab]?.cols?.find((c) => c.panes?.includes(pane))?.pin);
+    const pin = () => setShared("strip.req", { op: "pin", pane, n: Date.now() + Math.random() }); // full ink: the selected pane, and one that needs you
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -167,9 +170,11 @@ export default class Pane extends View {
       .items_center()
       .text_size(12.5)
       .relative()
+      // Pinned: the accent's tint, a little stronger when it's also the selected one.
+      .when(pinned && st !== "blocked", (el) => el.bg(t.accent + (on ? "40" : "24")))
       .when(st === "blocked", (el) => el.bg(t.blocked + "66")
         .child(div().absolute().left_0().bottom_0().w_full().h(2).bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })))
-      .when(on && st !== "blocked", (el) => el.bg(t.selected))
+      .when(on && !pinned && st !== "blocked", (el) => el.bg(t.selected))
       // Dropping: a bar on the edge the pane will land on.
       .when(dropping && side === "before", (el) => el.border_l(3).border_color(t.foreground))
       .when(dropping && side === "after", (el) => el.border_r(3).border_color(t.foreground))
@@ -180,7 +185,7 @@ export default class Pane extends View {
         .on_scroll_wheel((e) => this.wheel(e))
         .on_mouse_move((e, cx) => this.dragMove(e, cx))
         .on_mouse_down("left", (e) => {
-          if (e.modifiers.control) setShared("strip.drag", { pane, at: Date.now() });
+          if (e.modifiers.control && !pinned) setShared("strip.drag", { pane, at: Date.now() });
           else if (shared("strip.drag")) setShared("strip.drag", null); // a drag dropped elsewhere
           if (shared("strip.resize")) setShared("strip.resize", null);
         })
@@ -197,17 +202,19 @@ export default class Pane extends View {
       .child(div().flex_none().truncate().max_w(260).text_size(12.5).when(ink, el => el.font_medium()).text_color(ink ? t.foreground : t.muted).child(name))
       .when(Boolean(p.cwd), (el) => el.child(this.where(t, folder(p.cwd), null, ink)))
       .when(Boolean(p.branch), (el) => el.child(this.where(t, p.branch, "mods/kanso-chrome/icons/branch.svg", ink)))
+      .when(pinned && !this.hovered, (el) => el.child(svg("mods/kanso-chrome/icons/pin.svg").size(12).flex_none().text_color(t.dim)))
       .child(div().flex_1())
       .when(st === "working" && !this.hovered, el => el.child(h_flex().w(12).h(12).flex_none().items_center().justify_center().text_size(10).text_color(t.working).child(div().frames(["\u00b7", "\u2022", "\u25cf", "\u2022"], 450))))
       .when(st === "blocked", el => el.child(h_flex().flex_none().gap(6).items_center().text_size(11.5).font_medium().text_color(t.foreground)
         .child(div().size(7).rounded_full().bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })).child("Needs you")))
       .when(st === "done" && !this.hovered, el => el.child(div().size(6).flex_none().rounded_full().bg(t.done)))
       .when(this.hovered, el => el
+        .when(strip, el => el.child(this.button(t, `ph-p-${pane}`, "pin", pin).when(pinned, (b) => b.text_color(t.foreground))))
         .when(Boolean(p.cwd), el => el.child(this.button(t, `ph-o-${pane}`, "open-with", () => this.openWith(p))))
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
-      .when(strip, (el) => el.child(this.grip(t, pane)).child(this.edge(t, pane)));
+      .when(strip, (el) => el.when(!pinned, (el) => el.child(this.grip(t, pane))).child(this.edge(t, pane)));
   }
 }

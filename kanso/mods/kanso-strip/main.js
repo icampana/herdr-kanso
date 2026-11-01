@@ -22,9 +22,11 @@
 // Copies, chosen by props: none = the controller and minimap (status bar),
 // {filler: true} = free space, {peek: pane, terminal, side} = a peek.
 //
-// State per tab in shared "strip.state": { cols: [{ panes, w, h, y }], vx }
+// State per tab in shared "strip.state": { cols: [{ panes, w, pin }], vx }
 //   w: column width as a share of the view; vx: the view's left edge on the
-//   row, in view widths. A column may stack panes (split down): they share
+//   row, in view widths. pin: "left" or "right" for a pinned column, which
+//   stays on that side of the view, always whole, while the rest slides in
+//   the space left between the pinned ones. A column may stack panes (split down): they share
 //   its height equally and never move vertically; drag moves a pane sideways.
 // Headers and peeks talk to the controller through shared "strip.req"
 // (scroll, focus, move, width) and "strip.intent" (where the next pane goes).
@@ -46,6 +48,7 @@ const KEY = "strip.state";
 const HEADER_H = 34;
 const WHEEL_PX = 600; // trackpad/wheel pixels that slide the view one full width
 const MIN_PEEK = 0.02; // narrower slivers are left out
+const MIN_VIEW = 0.2; // pinned columns always leave this much of the view to slide
 
 const TAB_BLOCK = {
   id: "main", type: "block", background: "border",
@@ -183,15 +186,25 @@ export default class Strip extends View {
     return null;
   }
 
-  start(st, ci) { let s = 0; for (let i = 0; i < ci; i++) s += st.cols[i].w; return s; }
-  total(st) { return st.cols.reduce((s, c) => s + c.w, 0); }
+  // Positions on the sliding row count only columns that aren't pinned; the
+  // sliding view is what the pinned ones leave of the screen.
+  start(st, ci) { let s = 0; for (let i = 0; i < ci; i++) if (!st.cols[i].pin) s += st.cols[i].w; return s; }
+  total(st) { return st.cols.reduce((s, c) => s + (c.pin ? 0 : c.w), 0); }
+  // Columns are kept in screen order: pinned left, the sliding row, pinned
+  // right. A split or move that crosses a group lands at its edge.
+  order(st) {
+    const rank = (c) => (c.pin === "left" ? 0 : c.pin === "right" ? 2 : 1);
+    st.cols = st.cols.map((c, i) => [c, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([c]) => c);
+  }
+  pinnedW(st) { return st.cols.reduce((s, c) => s + (c.pin ? c.w : 0), 0); }
+  viewW(st) { return Math.max(MIN_VIEW, 1 - this.pinnedW(st)); }
 
   sync(tab, ps) {
     const st = this.state[tab] ?? { cols: [], vx: 0, n: shared("strip.n") ?? DEFAULT_N };
     if (st.vx === undefined) st.vx = 0;
     if (!st.n) st.n = shared("strip.n") ?? DEFAULT_N;
     const ids = new Set(ps.map((p) => p.pane));
-    st.cols = st.cols.map((c) => ({ panes: c.panes.filter((id) => ids.has(id)), w: c.w })).filter((c) => c.panes.length);
+    st.cols = st.cols.map((c) => ({ ...c, panes: c.panes.filter((id) => ids.has(id)) })).filter((c) => c.panes.length);
     const known = new Set(st.cols.flatMap((c) => c.panes));
     const fresh = ps.filter((p) => !known.has(p.pane));
     if (fresh.length && !st.cols.length) {
@@ -200,6 +213,7 @@ export default class Strip extends View {
     } else {
       for (const p of fresh) { this.place(st, p.pane); st.focus = p.pane; this.pendingFocus = p.terminal; this.reveal(st, p.pane); }
     }
+    this.order(st);
     this.state[tab] = st;
     return st;
   }
@@ -216,7 +230,7 @@ export default class Strip extends View {
   }
 
   clampView(st) {
-    const max = Math.max(0, this.total(st) - 1);
+    const max = Math.max(0, this.total(st) - this.viewW(st));
     st.vx = clamp(st.vx ?? 0, 0, max);
     st.tx = clamp(st.tx ?? st.vx, 0, max);
   }
@@ -224,11 +238,11 @@ export default class Strip extends View {
   // Slides the view the least that shows a pane whole (niri's "never center").
   reveal(st, id) {
     const at = this.where(st, id);
-    if (!at) return;
-    const s = this.start(st, at.ci), e = s + st.cols[at.ci].w;
+    if (!at || st.cols[at.ci].pin) return; // a pinned pane is always in view
+    const s = this.start(st, at.ci), e = s + st.cols[at.ci].w, vw = this.viewW(st);
     const from = st.tx ?? st.vx;
     if (s < from) st.tx = s;
-    else if (e > from + 1) st.tx = e - 1;
+    else if (e > from + vw) st.tx = e - vw;
     if (st.tx !== st.vx) this.dirty = true;
     this.clampView(st);
   }
@@ -262,7 +276,7 @@ export default class Strip extends View {
       case "move-left": case "move-right":
         if (at) {
           const to = at.ci + (name === "move-left" ? -1 : 1);
-          if (to >= 0 && to < st.cols.length) { [st.cols[at.ci], st.cols[to]] = [st.cols[to], st.cols[at.ci]]; this.reveal(st, id); }
+          if (to >= 0 && to < st.cols.length && !st.cols[at.ci].pin && !st.cols[to].pin) { [st.cols[at.ci], st.cols[to]] = [st.cols[to], st.cols[at.ci]]; this.reveal(st, id); }
         }
         break;
       case "new-right": split("right"); break;
@@ -271,7 +285,8 @@ export default class Strip extends View {
       case "width": if (at) { st.cols[at.ci].w = step(W_STEPS, st.cols[at.ci].w); this.reveal(st, id); } break;
       case "scroll-left": this.slide(st, -1 / 3); break;
       case "scroll-right": this.slide(st, 1 / 3); break;
-      case "center": if (at) { st.tx = this.start(st, at.ci) + st.cols[at.ci].w / 2 - 0.5; this.clampView(st); this.dirty = true; } break;
+      case "center": if (at && !st.cols[at.ci].pin) { st.tx = this.start(st, at.ci) + st.cols[at.ci].w / 2 - this.viewW(st) / 2; this.clampView(st); this.dirty = true; } break;
+      case "pin": if (id) this.pin(st, id); break;
       case "fit": this.fit(st, id); break;
       case "more": this.setN(st, (st.n ?? DEFAULT_N) + 1, id); break;
       case "fewer": this.setN(st, (st.n ?? DEFAULT_N) - 1, id); break;
@@ -293,7 +308,7 @@ export default class Strip extends View {
   setN(st, n, keep) {
     st.n = clamp(Math.round(n), 1, N_MAX);
     setShared("strip.n", st.n);
-    for (const c of st.cols) c.w = 1 / st.n;
+    for (const c of st.cols) if (!c.pin) c.w = 1 / st.n; // a pinned pane keeps its width
     if (keep) { st.tx = undefined; this.reveal(st, keep); st.vx = st.tx ?? st.vx; }
     this.clampView(st);
   }
@@ -318,9 +333,10 @@ export default class Strip extends View {
     this.clampView(st);
     this.dirty = true;
     this.slidAt = Date.now();
-    const whole = (ci) => { const s = this.start(st, ci); return s >= st.vx - EPS && s + st.cols[ci].w <= st.vx + 1 + EPS; };
+    const vw = this.viewW(st);
+    const whole = (ci) => { const c = st.cols[ci]; if (c.pin) return false; const s = this.start(st, ci); return s >= st.vx - EPS && s + c.w <= st.vx + vw + EPS; };
     const at = this.where(st, st.focus);
-    if (at && whole(at.ci)) return;
+    if (at && (st.cols[at.ci].pin || whole(at.ci))) return;
     let best = null;
     for (let ci = 0; ci < st.cols.length; ci++) if (whole(ci) && (best === null || Math.abs(ci - (at?.ci ?? 0)) < Math.abs(best - (at?.ci ?? 0)))) best = ci;
     if (best === null) return;
@@ -354,6 +370,22 @@ export default class Strip extends View {
     this.focusOn(st, id, ps);
   }
 
+  // Pins the pane's column to the side of the view it is on now, or lets a
+  // pinned one slide again. A pin that would leave less than MIN_VIEW to
+  // slide is refused.
+  pin(st, id) {
+    const at = this.where(st, id);
+    if (!at) return;
+    const c = st.cols[at.ci];
+    if (c.pin) { delete c.pin; this.reveal(st, id); this.dirty = true; return; }
+    if (1 - this.pinnedW(st) - c.w < MIN_VIEW) return;
+    const left = this.start(st, at.ci) + c.w / 2 - st.vx < this.viewW(st) / 2;
+    c.pin = left ? "left" : "right";
+    this.order(st);
+    this.clampView(st);
+    this.dirty = true;
+  }
+
   focusOn(st, id, ps) {
     const p = ps.find((q) => q.pane === id);
     if (!p) return;
@@ -373,6 +405,7 @@ export default class Strip extends View {
       if (at) { st.cols[at.ci].w = step(W_STEPS, st.cols[at.ci].w); this.reveal(st, req.pane); }
     } else if (req.op === "resize") { const at = this.where(st, req.pane); if (at) this.resize(st, at.ci, req.d); this.dirty = true; }
     else if (req.op === "per") this.setN(st, req.n, st.focus);
+    else if (req.op === "pin") this.pin(st, req.pane);
     else if (req.op === "move") {
       this.move(st, req.pane, req.to, req.side);
       this.focusOn(st, req.pane, ps);
@@ -385,12 +418,16 @@ export default class Strip extends View {
   move(st, id, to, side) {
     const from = this.where(st, id), target = this.where(st, to);
     if (!from || !target || id === to || (from.ci === target.ci && st.cols[from.ci].panes.length === 1)) return;
+    // A pinned pane never changes place, and nothing lands among the pinned.
+    if (st.cols[from.ci].pin || st.cols[target.ci].pin) return;
     const col = st.cols[from.ci];
     const after = side ? side === "after" : from.ci < target.ci;
     col.panes.splice(from.ri, 1);
     if (!col.panes.length) st.cols.splice(from.ci, 1);
     const t = this.where(st, to);
     st.cols.splice(after ? t.ci + 1 : t.ci, 0, { panes: [id], w: col.w });
+    this.order(st);
+    this.clampView(st);
   }
 
   // ---- The tree ----------------------------------------------------------------
@@ -402,21 +439,23 @@ export default class Strip extends View {
     const header = (id) => ({ id: `head-${id}`, type: "block", size: { px: HEADER_H }, content: { mod: "kanso-pane", props: { pane: id, terminal: byId.get(id).terminal, strip: true } } });
     const live = (id, size) => ({ id: `strip-${id}`, type: "column", size, background: "background",
       children: [header(id), { id: `term-${id}`, type: "block", content: { terminal: byId.get(id).terminal } }] });
+    // One pane: the cell is the column. Stacked: equal shares of the height.
+    const whole = (c, f) => c.panes.length === 1 ? live(c.panes[0], { weight: weight(f) })
+      : { id: `strip-col-${c.panes[0]}`, type: "column", gap: 1, background: "border", resizable: false, size: { weight: weight(f) },
+        children: c.panes.map((id) => live(id, { weight: 1000 })) };
     const peekGeo = {};
     const out = [];
-    const v0 = st.vx, v1 = st.vx + 1;
+    const vw = this.viewW(st);
+    const v0 = st.vx, v1 = st.vx + vw;
     let s = 0, covered = 0;
     for (const c of st.cols) {
+      if (c.pin) continue;
       const e = s + c.w, frac = Math.min(e, v1) - Math.max(s, v0);
       if (frac > MIN_PEEK) {
         covered += frac;
         const shown = c.panes;
-        if (frac >= c.w - EPS) {
-          // One pane: the cell is the column. Stacked: equal shares of the height.
-          if (shown.length === 1) out.push(live(shown[0], { weight: weight(frac) }));
-          else out.push({ id: `strip-col-${c.panes[0]}`, type: "column", gap: 1, background: "border", resizable: false, size: { weight: weight(frac) },
-            children: shown.map((id) => live(id, { weight: 1000 })) });
-        } else {
+        if (frac >= c.w - EPS) out.push(whole(c, frac));
+        else {
           // Cut by the view's edge: a peek of its first pane in view.
           const id = shown[0];
           peekGeo[id] = { w: c.w, frac };
@@ -428,9 +467,11 @@ export default class Strip extends View {
       }
       s = e;
     }
-    if (covered < 1 - EPS) out.push(filler("strip-rest", 1 - covered));
+    if (covered < vw - EPS) out.push(filler("strip-rest", vw - covered));
     if (JSON.stringify(peekGeo) !== JSON.stringify(shared("strip.peek") ?? {})) setShared("strip.peek", peekGeo);
-    return out;
+    // Pinned columns stay at their side, in their order, always whole.
+    const pinned = (side) => st.cols.filter((c) => c.pin === side).map((c) => whole(c, c.w));
+    return [...pinned("left"), ...out, ...pinned("right")];
   }
 
   apply(nodes) {
@@ -506,9 +547,10 @@ export default class Strip extends View {
     // focused one `foreground`. Click a pill to go there; scroll to slide.
     const at = this.where(st, st.focus);
     let x = 0;
+    const vw = this.viewW(st);
     const pills = st.cols.map((c, i) => {
-      const s0 = x, e0 = x + c.w; x = e0;
-      const seen = Math.min(e0, st.vx + 1) - Math.max(s0, st.vx);
+      const s0 = x, e0 = x + (c.pin ? 0 : c.w); x = e0;
+      const seen = c.pin ? c.w : Math.min(e0, st.vx + vw) - Math.max(s0, st.vx);
       const tone = at?.ci === i ? t.foreground : seen >= c.w - EPS ? t.muted : seen > MIN_PEEK ? t.dim : t.input;
       // A stacked column shows one thin bar per pane.
       const w = Math.round(6 + c.w * 18), k = c.panes.length;

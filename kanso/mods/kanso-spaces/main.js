@@ -261,15 +261,45 @@ export default class Spaces extends View {
     return out;
   }
 
+  // Sessions in the order the strip shows their panes (tab by tab), so the
+  // list reads like the screen.
+  inStripOrder(list) {
+    const state = shared("strip.state") ?? {};
+    const pos = (a) => { const ids = (state[a.tab]?.cols ?? []).flatMap((c) => c.panes ?? []); const i = ids.indexOf(a.pane); return i < 0 ? 1e6 : i; };
+    return list.map((a, i) => [a, i]).sort((x, y) => (x[0].tab_index - y[0].tab_index) || (pos(x[0]) - pos(y[0])) || (x[1] - y[1])).map(([a]) => a);
+  }
+
+  // Drag a session onto another in the same tab (the one on screen) to move
+  // its pane there in the strip. Pinned panes stay where they are.
+  reorder(a, mine) {
+    const state = shared("strip.state") ?? {};
+    const pinnedOf = (x) => Boolean(state[x.tab]?.cols?.find((c) => c.panes?.includes(x.pane))?.pin);
+    const shownTab = spaces().find((s) => s.active)?.tabs?.find((x) => x.active)?.id;
+    const from = this.draggedAgent;
+    const ok = from && from.pane !== a.pane && from.tab === a.tab && a.tab === shownTab && !pinnedOf(a) && !from.pinned;
+    return {
+      pinned: pinnedOf(a),
+      target: ok && this.overAgent === a.pane ? (from.at < mine.indexOf(a) ? "after" : "before") : null,
+      hover: (h, cx) => { if (h && this.draggedAgent && this.overAgent !== a.pane) { this.overAgent = a.pane; cx.notify(); } },
+      down: () => { this.draggedAgent = { pane: a.pane, tab: a.tab, pinned: pinnedOf(a), at: mine.indexOf(a) }; this.overAgent = null; },
+      up: (cx) => {
+        const d = this.draggedAgent;
+        this.draggedAgent = null;
+        if (ok) setShared("strip.req", { op: "move", pane: d.pane, to: a.pane, side: d.at < mine.indexOf(a) ? "after" : "before", n: Date.now() + Math.random() });
+        cx.notify();
+      },
+    };
+  }
+
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
     const all = withTerminals(agents(), panes(), spaces());
     const draw = (r) => {
       if (collapsed) return this.compact(r, t);
-      const mine = all.filter((a) => a.space === r.w.id);
+      const mine = this.inStripOrder(all.filter((a) => a.space === r.w.id));
       const open = !this.agentsFolded.has(r.w.id);
-      return [this.row(r, t, mine), ...(open ? mine.map((a) => agentRow(a, r.tree ? CHILD_PAD : 0, t)) : [])];
+      return [this.row(r, t, mine), ...(open ? mine.map((a) => agentRow(a, r.tree ? CHILD_PAD : 0, t, this.reorder(a, mine))) : [])];
     };
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name)])].sort();
     const loading = m => {
@@ -478,7 +508,7 @@ export default class Spaces extends View {
       .on_size_change((size) => { this.width = size.width; })
       .child(add)
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(collapsed ? 6 : 0).pb(14).overflow_y_scrollbar().mode(collapsed ? "hover" : "always")
-        .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
+        .on_mouse_up("left", (_e, cx) => { this.pressed = null; this.draggedAgent = null; cx.notify(); })
         .children(this.grouped(t, collapsed)));
   }
 }

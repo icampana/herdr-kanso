@@ -77,7 +77,8 @@ export function agentFold(id, mine, open, onToggle, t) {
 // One agent under its space: icon, title, machine (remote), state. Zen: the
 // focused one carries full ink and a faint wash, the rest stay muted; clicking
 // goes to its pane.
-export function agentRow(a, indent, t) {
+// `drag` (optional): { pinned, target, down, up } to reorder panes from here.
+export function agentRow(a, indent, t, drag) {
   const pic = agentIcon(a.program, 15, t.foreground);
   const idle = (a.status === "idle" || a.status === "done" || !a.status) && !a.focused;
   const machine = a.address.includes("/") ? a.address.split("/")[0] : null;
@@ -86,11 +87,17 @@ export function agentRow(a, indent, t) {
     .when(a.focused, (el) => el.bg(t.foreground + "0c"))
     .hover((s) => s.bg(t.foreground + "0c"))
     .on_click(() => run("pane.focus", { pane: a.pane }))
+    // Dropping: a line on the side the pane will land on.
+    .when(drag?.target === "before", (el) => el.border_t(2).border_color(t.accent))
+    .when(drag?.target === "after", (el) => el.border_b(2).border_color(t.accent))
+    .when(Boolean(drag), (el) => el.on_mouse_down("left", () => drag.down()).on_mouse_up("left", (_e, cx) => drag.up(cx))
+      .on_hover((h, cx) => drag.hover(h, cx)))
     .when(Boolean(pic), (el) => el.child(pic.opacity(a.focused ? 1 : 0.8)))
     .child(div().flex_1().min_w(0).truncate()
       .text_color(a.focused ? t.foreground : idle ? t.dim : t.muted)
       .when(a.focused, (el) => el.font_medium())
       .child(agentLabel(a)))
+    .when(Boolean(drag?.pinned), (el) => el.child(svg("mods/kanso-chrome/icons/pin.svg").size(11).flex_none().text_color(t.dim)))
     .when(Boolean(machine), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(machine)))
     .child(statusMark(t, a.status, true));
 }

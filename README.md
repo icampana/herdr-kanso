@@ -23,6 +23,8 @@ the view holds at once, 1 to 8.
 | Drag the six-dot grip onto another pane | Move it before or after that pane |
 | Wheel over a header or the minimap | Slide the view |
 | Cmd+Shift+O | Open the pane's folder in a code editor |
+| Cmd+Alt+P | Pin the pane (or unpin it): it keeps its place and stays in view |
+| Drag a session in the sidebar | Move its pane in the strip |
 
 ![Kanso](kanso/preview.png)
 

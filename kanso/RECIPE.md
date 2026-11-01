@@ -78,6 +78,14 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       column's height equally. Panes never move vertically: dragging one out
       of a stack makes it its own column. A tab holding a mod pane falls back to
       Herdr's own split view.
+      A column can be pinned (the header's pin button on hover, "Pin pane"
+      in the right-click menu, Cmd+Alt+P). It stays on the side of the view
+      it was on, always whole and at its width, and never changes place:
+      dragging it, moving it, dropping a pane on it and new panes leave it
+      where it is. The rest slides in what the pinned columns leave (never
+      under 20% of the view; a pin that would leave less is refused). A
+      pinned header has the `accent` at 14% (25% when selected) and a 12 px
+      pin by the title; it has no grip.
       Each pane has a 34-tall header (`kanso-pane`, always shown). The
       selected pane's header has the `selected` background (in the strip, the
       pane the strip remembers, so it stays marked while a side panel has the
@@ -186,7 +194,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     unfolds its agents; the folded state is kept.
   - Drag a space to reorder it (a 2px `accent` line shows where it lands).
     Right-click opens the shipped space menu.
-  - Click an agent row to focus its pane.
+  - Click an agent row to focus its pane. Sessions are listed in the order
+    the strip shows their panes, tab by tab; drag one onto another in the
+    tab on screen to move its pane there (a 2px `accent` line shows where).
+    A pinned pane shows a pin and doesn't move.
   - Every terminal in the space is listed, not only the agents that report
     a status to Herdr: after those come the rest (Codex and other models'
     CLIs, shells, servers) with their program's icon, their title (a shell's
@@ -398,6 +409,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - Dragging a header grip 200px right on a 1200px view moves that divider by
   a sixth of the view and the next column shrinks by the same.
 - Cmd+Alt+Left past the first column in view slides the view.
+- Pin the left pane of three and scroll: it stays at the left, whole, while
+  the others slide beside it. Ctrl+dragging it, Cmd+Shift+] and dropping a
+  pane on it change nothing. Pinning panes that would leave under a fifth of
+  the view does nothing.
 - Select the second of three panes, go to another space and back: that pane
   takes typing at once, with no click, and its header is the lighter one.
   An agent asking for input tints its pane's header in `blocked`.
