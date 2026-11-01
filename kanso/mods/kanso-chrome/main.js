@@ -44,10 +44,10 @@ export default class WorkspaceChrome extends View {
         .child(chip);
     }
     // The top bar holds the traffic lights and lets you drag the window. Open,
-    // Herdr's mark sits beside the lights (collapsed, the rail shows it lower,
-    // over the buttons, where there's room). The actions live one row lower.
+    // Herdr's mark sits at its right end, clear of the lights (collapsed, the
+    // rail shows it lower, over the buttons). The actions live one row lower.
     const lights = window()?.platform === "macos" ? 76 : 14;
-    return h_flex().size_full().bg(t.chrome).items_center().pl(lights).gap(8)
+    return h_flex().size_full().bg(t.chrome).items_center().justify_end().pl(lights).pr(14).gap(8)
       .when(!collapsed, el => el.child(image("frame/welcome/herdr.png").size(20).rounded(5))
         .child(div().font_semibold().text_size(13).text_color(t.foreground).child("Herdr")));
   }

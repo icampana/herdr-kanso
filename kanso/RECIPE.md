@@ -18,7 +18,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 
 - **Sidebar**, theme `chrome` (`#161615` dark, `#e3dfd6` light).
   - **Top strip**, 48 tall: the macOS traffic lights (at `[12, 16]`) and,
-    76 in on macOS (14 elsewhere), Herdr's mark: its icon
+    at its right end (14 in), Herdr's mark: its icon
     (`frame/welcome/herdr.png`, 20, radius 5) and "Herdr" (13, semibold,
     `foreground`), so you know what you're in. It drags the window.
     Collapsed, the strip is empty and the mark sits lower, over the rail's
