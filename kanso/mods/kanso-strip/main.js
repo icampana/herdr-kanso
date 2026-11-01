@@ -48,6 +48,10 @@ const KEY = "strip.state";
 const HEADER_H = 34;
 const WHEEL_PX = 600; // trackpad/wheel pixels that slide the view one full width
 const MIN_PEEK = 0.02; // narrower slivers are left out
+// A peek's rows match the live terminal's, so the text sits where it will be
+// when the pane comes into view: Herdr's terminal rows are 20 pt at 13 pt
+// type (measured in a window shot), about 1.5 times the font size.
+const rowH = (size) => Math.ceil(size * 1.5);
 const MIN_VIEW = 0.2; // pinned columns always leave this much of the view to slide
 
 const TAB_BLOCK = {
@@ -140,7 +144,7 @@ export default class Strip extends View {
     const text = v_flex().absolute().top(8).w(full ?? 2000).px(14)
       .when(p.side === "left", (el) => el.right(0)).when(p.side !== "left", (el) => el.left(0))
       .font_family(String(s.font ?? s.font_family ?? "JetBrains Mono")).text_size(size).text_color(t.foreground)
-      .children(this.lines.map((l, i) => div().id(`pl-${i}`).h(Math.round(size * 1.38)).whitespace_nowrap().child(l || " ")));
+      .children(this.lines.map((l, i) => div().id(`pl-${i}`).h(rowH(size)).whitespace_nowrap().child(l || " ")));
     // Dropping a dragged pane on a peek puts it beyond that column's near edge.
     const drag = shared("strip.drag");
     return div().id("peek").relative().size_full().overflow_hidden().bg(t.background).cursor_pointer()
