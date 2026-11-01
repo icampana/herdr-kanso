@@ -70,10 +70,16 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       that shows on hover, col-resize cursor). Dragging the handle resizes
       that column; its neighbour
       gives or takes the space (never under 8% of the view), the rest reflow,
-      and the row grows or shrinks in pages. The view slides continuously
-      over the row. A column cut by the edge shows that terminal's screen as
-      dimmed text clipped at the edge (a "peek"; Herdr can't clip a live
-      terminal), with a small pill naming what is behind the edge ("‹ zsh"). Off-screen columns aren't drawn. A split down stacks a pane
+      and the row grows or shrinks in pages. The view always starts at a
+      column's edge and shows only whole, live panes: as many as fit, which
+      then share the width by their weights. It never slides past the first
+      start from which the rest of the row fits. When columns lie beyond an
+      edge, a 28-wide edge tab stands there (`background`, `hover` on hover):
+      the next pane's program icon (15, 80%), its state (a breathing
+      `working` dot, a breathing `blocked` one, a `done` one), the count of
+      panes beyond when more than one (10.5, `dim`) and a ‹ or › at the
+      bottom; its tooltip names the pane. Click it and that pane comes in.
+      Off-screen columns aren't drawn. A split down stacks a pane
       under the focused one in the same column; stacked panes share the
       column's height equally. Panes never move vertically: dragging one out
       of a stack makes it its own column. A tab holding a mod pane falls back to
@@ -154,7 +160,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     180-wide minimap (`kanso-strip`) exactly in the middle, and
     `kanso-status` with `{side: "right"}`. The minimap is a centred row of
     soft pills, one per column (6 + 18 x its share wide, 4 tall, gap 3, no
-    frame): `muted` whole in view, `dim` peeking, `input` off-screen,
+    frame): `muted` in view, `input` off-screen,
     `foreground` focused; a stacked column shows one 2px bar per pane. Click a pill to go there. After the pills, a tiny
     "− n +" control: fewer or more panes per view, and the number itself
     evens the columns out to 1/n.
@@ -230,15 +236,15 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     (move), Cmd+Alt+1-9, Cmd+Alt+Home/End, Cmd+Alt+C (centre). There is no
     vertical move; those keys go to the program.
   - The wheel or a swipe over any pane header or the minimap slides the view
-    continuously (600px of travel per view width) without moving the focus;
-    if the focused pane slides out of full view, the keyboard moves to the
-    nearest pane still whole. Cmd+Alt+, and Cmd+Alt+. slide a third of the
-    view. Clicking a peek or a minimap mark slides to that pane.
+    one column per quarter view of travel (600px per view width) without
+    moving the focus; if the focused pane leaves the view, the keyboard
+    moves to the nearest pane still in view. Cmd+Alt+, and Cmd+Alt+. slide
+    one column. Clicking an edge tab or a minimap mark slides to that pane.
   - Drag a header's six-dot grip (or Ctrl+drag the header) onto another
     header to move the pane: the left half of the target means before it,
     the right half after it. A 3px `foreground` bar on that edge shows where
-    it will land, and the dragged header dims. Dropping on a peek puts the
-    pane beyond that column's near edge.
+    it will land, and the dragged header dims. Dropping on an edge tab puts
+    the pane just beyond that edge.
 - **Side panels, on demand**:
   - Clicking a panel button rewrites the panel stack to hold only that
     panel's block and shows it. Clicking it again, or closing the panel any
@@ -281,9 +287,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - `kanso-tabs`: tabs, panel buttons and the on-demand panel mount via
     `layout.set`.
   - `kanso-strip`: the canvas. The copy in the status row is the controller
-    and minimap; copies with `{filler: true}` paint free space and copies
-    with `{peek, terminal, side, title}` draw a peek (`hc read` every 3 s). State per
-    tab lives in shared `strip.state` (`{cols: [{panes, w}], vx, tx, n}`);
+    and minimap; copies with `{edge, side, count}` draw an edge tab. State per
+    tab lives in shared `strip.state` (`{cols: [{panes, w, pin}], vx, n}`);
     the last chosen `n` is in shared `strip.n` for new tabs.
     Headers talk to it through shared `strip.req` (scroll, move, width),
     `strip.intent` (where the next new pane goes) and `strip.drag`.
@@ -338,8 +343,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   `panel-body` itself for that reason.
 - Herdr won't let a mod handle the mouse over terminal text, so reordering
   is Ctrl+drag on the pane headers, not on the terminal, and a grip drag only
-  tracks while the pointer stays on the header row (peeks and fillers forward
-  it too; a terminal below the headers swallows it).
+  tracks while the pointer stays on the header row (edge tabs forward it
+  too; a terminal below the headers swallows it).
 - A terminal block takes the keyboard on click, so `focused().pane` is null
   and implicit pane commands fail. Pass `pane` or `terminal` explicitly
   (`pane.split {pane}`, `pane.focus {terminal}`), and focus a new pane only
