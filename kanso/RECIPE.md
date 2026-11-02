@@ -299,7 +299,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - Kept as alternatives: Cmd+Alt+Left/Right or H/L (focus), with Shift
     (move), Cmd+Alt+1-9, Cmd+Alt+Home/End, Cmd+Alt+C (centre). There is no
     vertical move; those keys go to the program.
-  - The wheel or a swipe over any pane header or the minimap slides the view
+  - The wheel or a swipe over any pane header, an edge tab or the minimap slides the view
     one column per quarter view of travel (600px per view width) without
     moving the focus; if the focused pane leaves the view, the keyboard
     moves to the nearest pane still in view. Cmd+Alt+, and Cmd+Alt+. slide

@@ -133,6 +133,13 @@ function paintOthers(tree) {
 
 // A header's wheel events arrive faster than the controller renders. Each one
 // carries only its own delta, so keep the sum of the ones not yet applied.
+// Wheel or swipe travel in px along the strip: a sideways swipe wins over a
+// vertical one, a mouse notch is 40px.
+function wheelDelta(e) {
+  const lines = e.delta_lines?.y ?? 0;
+  return lines ? -lines * 40 : (Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : -e.delta.y);
+}
+
 function postScroll(d) {
   const prev = shared("strip.req");
   const open = prev && prev.op === "scroll" && prev.n !== shared("strip.ack");
@@ -291,6 +298,8 @@ export default class Strip extends View {
         endDrag();
       })
       .on_click(() => show(p.edge))
+      // A swipe over the rail slides the strip, as over a header.
+      .on_scroll_wheel((e) => { const d = wheelDelta(e); if (d) postScroll(d / WHEEL_PX); })
       .child(HoverCard.new(`edge-card-${p.side}`).anchor(left ? "left_center" : "right_center").open_delay(350).close_delay(250)
         .trigger(stack)
         .content(card));
@@ -417,8 +426,7 @@ export default class Strip extends View {
   // Wheel or swipe over a header slides the canvas continuously (600px of
   // travel = one view width; a mouse notch = 40px).
   wheelReq(e) {
-    const lines = e.delta_lines?.y ?? 0;
-    const d = lines ? -lines * 40 : (Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : -e.delta.y);
+    const d = wheelDelta(e);
     if (d) postScroll(d / WHEEL_PX);
   }
 
@@ -1026,9 +1034,7 @@ export default class Strip extends View {
   // ---- Drawing -----------------------------------------------------------------
 
   wheel(ev, st) {
-    const lines = ev.delta_lines?.y ?? 0;
-    const d = lines ? -lines * 40 : (Math.abs(ev.delta.x) > Math.abs(ev.delta.y) ? -ev.delta.x : -ev.delta.y);
-    this.slide(st, d / WHEEL_PX);
+    this.slide(st, wheelDelta(ev) / WHEEL_PX);
   }
 
   render() {
