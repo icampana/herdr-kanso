@@ -10,6 +10,7 @@ async function layoutFixture() {
   let tree = { id: "root", children: [
     { id: "sidebar", min: 200 },
     { id: "work-body", children: [...clone(nodes), { id: "panel-body", type: "stack", hidden: true, children: [] }] },
+    { id: "strip-map", type: "block", content: { mod: "kanso-strip" } },
   ] };
   const state = {}, writes = [];
   const host = {
@@ -68,5 +69,45 @@ for (const [file, name, write] of writers) {
     }
   });
 }
+
+// Right after layout.switch, layout() can still return the tree of the layout
+// that was shown before. A writer that edits that tree and sets it saves it
+// into kanso.json, and Kanso is gone until the file is restored by hand.
+function foreignLayout() {
+  const tree = { id: "root", children: [
+    { id: "sidebar", min: 180, children: [{ id: "spaces", type: "block", content: { mod: "spaces" } }] },
+    { id: "work", type: "column", children: [{ id: "work-body", type: "row", children: [
+      { id: "main", type: "block", content: { tab: "active" } },
+      { id: "panel-body", type: "stack", hidden: true, children: [] },
+    ] }] },
+  ] };
+  const state = {}, writes = [];
+  const host = {
+    shared: (key) => clone(state[key] ?? null), setShared: (key, value) => { state[key] = clone(value); },
+    layout: () => clone(tree), window: () => ({ platform: "macos" }),
+    run: (command, args) => { if (command === "layout.set") writes.push(clone(args.layout)); },
+  };
+  return { host, writes };
+}
+
+for (const [file, name, write] of writers) {
+  test(`${file} never writes another layout's tree`, async () => {
+    const f = foreignLayout();
+    write(await load(file, [name], f.host));
+    assert.equal(f.writes.length, 0);
+  });
+}
+
+test("kanso-strip/main.js never writes another layout's tree", async () => {
+  const f = foreignLayout();
+  const { Strip } = await load("kanso-strip/main.js", ["Strip"], f.host);
+  const strip = new Strip(); strip.sets = [];
+  const nodes = [{ id: "strip-col-a", type: "column", size: { weight: 1 }, children: [
+    { id: "strip-a", type: "block", size: { weight: 1 }, content: { terminal: "a" } },
+  ] }];
+  strip.apply(nodes);
+  assert.equal(f.writes.length, 0);
+  assert.notEqual(strip.applied, JSON.stringify(nodes), "A skipped write must not count as applied, or it is never retried");
+});
 
 // Parse a single PowerShell literal independently of the production escaper.

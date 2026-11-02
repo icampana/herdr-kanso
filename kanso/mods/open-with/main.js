@@ -15,6 +15,11 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, run, notify, theme, props, closeOverlay, focused, panes, spaces, home, appHome, shared, setShared, layout, window as win } from "herdr";
 
+// Right after layout.switch, layout() can still return the tree of the layout
+// shown before; setting it would save that tree into kanso.json. Only Kanso's
+// tree has the strip map, so only that tree is written.
+const isKansoTree = (n) => n?.id === "strip-map" || (n?.children ?? []).some(isKansoTree);
+
 // Same helper as kanso-strip, kanso-tabs, kanso-spaces and kanso-panel.
 const LAYOUT_INTENT = "kanso.layout";
 // The strip writes its columns under their own key, many times a second, so
@@ -79,7 +84,7 @@ function commitLayout(patch) {
   const tree = layout();
   if (!tree) return false;
   paintLayout(tree);
-  run("layout.set", { layout: tree });
+  if (isKansoTree(tree)) run("layout.set", { layout: tree });
   return true;
 }
 
