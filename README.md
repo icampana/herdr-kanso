@@ -26,6 +26,7 @@ for their names). You choose how many panes the view holds at once, 1 to 8.
 | Cmd+Shift+O | Open the pane's folder in a code editor |
 | Cmd+Alt+P | Pin the pane (or unpin it): it keeps its place and stays in view |
 | Drag a session in the sidebar | Move its pane in the strip |
+| Right-click a file in the Files panel | Open it with an editor, or preview it in the panel (Markdown rendered) |
 | Double-click a session in the sidebar, a pane's header, a space or a tab | Rename it (the same dialog for all; an empty name brings the automatic one back) |
 
 ![Kanso](kanso/preview.png)
@@ -57,7 +58,11 @@ Open with (`open-with`: Cmd+Shift+O, the pane header's open button, or
 "Open with…" in the right-click menu) lists the code editors installed on this
 computer (Cursor, VS Code, Windsurf, Zed, Sublime Text, JetBrains IDEs, Xcode
 and others; Neovim, Helix and Vim open in a split) and opens the pane's folder
-in the one you pick. To find them it runs `sh` (app folders, `command -v`,
+in the one you pick. From the Files panel it opens a file instead
+(right-click it, or the open button while it is shown), and a text file is
+offered first to Kanso's own preview in the side panel: Markdown rendered,
+anything else as read-only code, read again as the file changes, with no
+editor at all. To find the editors it runs `sh` (app folders, `command -v`,
 `flatpak`); on macOS it opens the editor with `open -a` and saves each app's
 icon as a PNG with `plutil` and `sips` under
 `~/.config/herdr-app/data/open-with/`.

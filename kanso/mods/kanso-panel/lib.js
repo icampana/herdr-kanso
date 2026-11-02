@@ -1,5 +1,7 @@
 // Shared by the three panels of the kanso-panel mod (files, changes, pull request).
-import { spaces, panes, focused } from "herdr";
+import { div } from "gpui-kit";
+import { EditorState, TextView } from "gpui-base";
+import { spaces, panes, focused, layout, run, theme, settings } from "herdr";
 
 // Where the focused pane is: its folder, the machine it is on (null: this
 // computer) and its space.
@@ -25,4 +27,50 @@ export function diffRows(lines, { max, width } = {}) {
     if (kind === " ") { old++; return { kind, number: next++, text }; }
     return { kind: "", text: line };
   });
+}
+
+// ---- Showing a file --------------------------------------------------------------
+
+const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
+const MAX_TEXT = 400000;
+export const ext = (path) => (path.includes(".") ? path.split(".").pop().toLowerCase() : "");
+export const isMarkdown = (path) => ["md", "markdown", "mdx"].includes(ext(path));
+
+// A read-only editor state for a code or text file, in the terminal's font,
+// highlighted in the theme's ANSI hues. Release it when done.
+export function codeState(path, text) {
+  const t = theme(), e = ext(path) || "txt";
+  return EditorState.new({ language: LANG[e] ?? e, readonly: true,
+    value: text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + "\n… (file truncated)" : text,
+    font_family: settings().font_family, font_size: 12,
+    syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
+}
+
+// Markdown as the SDK renders it (`TextView.markdown`), selectable, in a
+// scrolling column with the panel's margins.
+export function markdownView(id, text, t) {
+  return div().id(`${id}-scroll`).flex_1().min_h(0).overflow_y_scrollbar()
+    .child(div().px(16).py(12).text_size(13).text_color(t.foreground)
+      .child(TextView.markdown(id, text.length > MAX_TEXT ? text.slice(0, MAX_TEXT) + "\n\n… (file truncated)" : text).selectable(true)));
+}
+
+// ---- The panel stack --------------------------------------------------------------
+
+function findNode(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) { const found = findNode(child, id); if (found) return found; }
+  return null;
+}
+
+// Puts one block in the side panel (as kanso-tabs' panel buttons do) or,
+// with no id, empties it: Herdr then ends the panel's mod.
+export function showPanel(id, content) {
+  const tree = layout();
+  const panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
+  if (!body) return false;
+  body.children = id ? [{ id, type: "block", content }] : [];
+  if (id) body.active = id; else delete body.active;
+  (panel ?? body).hidden = !id;
+  run("layout.set", { layout: tree });
+  return true;
 }

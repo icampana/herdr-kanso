@@ -366,7 +366,12 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     close.
   - `open-with`: a popup (380 wide, at the top; 340 at the pointer from the
     menu and the header) that opens a folder in a code editor. Props
-    `{folder, machine}`; without them, the focused pane's folder. It lists the
+    `{folder, machine}`; without them, the focused pane's folder. With
+    `{file}` (a full path; the Files panel sends it on a right-click or
+    its open button) the editors open that file, and a text file (by
+    extension: md, txt, json, yaml, code and the like) is offered first to
+    "Preview in the panel": `kanso-panel` with `{panel: "preview", path,
+    on}` mounted in `panel-body` the way kanso-tabs mounts its panels. It lists the
     editors found on this computer (macOS app folders, `command -v`, Flatpak),
     the last one used first (shared `open-with.recent`), with each app's own
     icon on macOS. Enter, 1 to 9 or a click opens; Esc leaves. Terminal
@@ -376,12 +381,19 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     Cmd+Shift+O (`mod.open:open-with`, in `keys.json`) opens it.
   - `kanso-chrome`: the top strip's mark and the sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
-  - `kanso-panel`: the three side panels in one mod, chosen by
-    `props.panel`; each is a plain class in its own file (`files.js`: lazy
-    file tree via `sh`, git status marks; `changes.js`: git diff and
-    commit; `pr.js`: the pull request panel, read with `gh pr view`, `gh pr
-    diff` and one GraphQL query for unresolved review threads) and `lib.js`
-    holds what they share (where the focused pane is, diff rows). A panel
+  - `kanso-panel`: the side panels in one mod, chosen by `props.panel`;
+    each is a plain class in its own file (`files.js`: lazy file tree via
+    `sh`, git status marks, a file shown in place: Markdown rendered, else
+    read-only code; `changes.js`: git diff and commit; `pr.js`: the pull
+    request panel, read with `gh pr view`, `gh pr diff` and one GraphQL
+    query for unresolved review threads; `preview.js`: one file by full
+    path, `{path, on}`, drawn the same way, read again whenever its folder
+    changes, with Open with, read-again and close buttons) and `lib.js`
+    holds what they share (where the focused pane is, diff rows, the two
+    file renderers: `codeState` is a read-only `EditorState` in the
+    terminal's font with the theme's ANSI hues, `markdownView` is the
+    SDK's `TextView.markdown`, selectable, in a scrolling column with 16 px
+    sides; and `showPanel`, which mounts a block in `panel-body`). A panel
     exists only while `kanso-tabs` shows it, so it never polls the layout
     to learn whether it is visible.
   - All are derived from Herdr's shipped mods (Apache-2.0) through the 0OZ
