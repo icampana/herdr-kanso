@@ -14,11 +14,11 @@
 // you, and hand a task (explain, address feedback, resolve conflicts) to your
 // agent in a new tab. A branch without one offers to create it.
 //
-// As the side panel's block it works only while the panel shows it: hidden,
-// it runs nothing and catches up the moment it shows.
-import { View, div, svg } from "gpui-kit";
+// One of the kanso-panel mod's panels: it exists only while shown.
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button, Popover, Input, InputState } from "gpui-base";
-import { spaces, panes, focused, exec, knownAgents, notify, run, theme, settings, layout, props } from "herdr";
+import { exec, knownAgents, notify, run, theme, settings } from "herdr";
+import { location, key, diffRows } from "./lib.js";
 
 const ICON = "mods/kanso-chrome/icons/";
 const FIELDS = "number,title,state,isDraft,url,author,baseRefName,headRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews,reviewRequests,assignees,labels,additions,deletions,changedFiles,files,updatedAt";
@@ -42,24 +42,6 @@ function tokens(t) {
   };
 }
 
-function findNode(node, id) {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) { const found = findNode(child, id); if (found) return found; }
-  return null;
-}
-function panelShows(id) {
-  const tree = layout(), panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
-  const box = panel ?? body;
-  return !box || (!box.hidden && body?.active === id);
-}
-
-function location() {
-  const space = spaces().find((s) => s.active), f = focused();
-  const pane = f?.pane ? panes().find((p) => p.pane === f.pane) : null;
-  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
-}
-const key = () => { const { cwd, on } = location(); return JSON.stringify({ cwd, on }); };
 
 function ago(iso) {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -94,18 +76,6 @@ function splitDiff(text) {
   }
   return out;
 }
-function diffRows(lines) {
-  let old = 0, next = 0;
-  return lines.slice(0, MAX_DIFF).map((line) => {
-    const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
-    if (m) { old = +m[1]; next = +m[2]; return { kind: "@", text: line }; }
-    const kind = line[0], text = (line.slice(1) || " ").slice(0, 400);
-    if (kind === "-") return { kind, number: old++, text };
-    if (kind === "+") return { kind, number: next++, text };
-    if (kind === " ") { old++; return { kind, number: next++, text }; }
-    return { kind: "", text: line };
-  });
-}
 
 // T3 Code's agent tasks, worded for a pull request reached through `gh`.
 const PROMPTS = {
@@ -126,24 +96,20 @@ function quietLink(id, label, onClick, c, options = {}) {
     .child(div().text_size(options.size ?? 12).text_color(disabled ? c.border : options.color ?? c.muted).child(label));
 }
 
-export default class PullRequest extends View {
-  init(_props, cx) {
+export class PullRequest {
+  init(cx) {
     this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
     this.expanded = { checks: false, files: false }; this.width = 368;
     this.picker = null; this.candidates = null; this.query = "";
     this.search = InputState.new({ placeholder: "Search" });
     this.search.on("change", (_e, cx) => { this.query = this.search.value(); cx.notify(); });
-    const p = props(); this.inPanel = !p || Object.keys(p).length === 0;
-    this.active = () => !this.inPanel || panelShows("pr");
-    this.wasShown = this.active();
     this.refresh(cx);
     // Every minute while shown, every 20 s while a check runs; never under an open picker.
     cx.timer.every(20000, (cx) => {
-      if (!this.active() || this.picker) return;
+      if (this.picker) return;
       const pending = this.checks().some((ch) => ch.state === "pending");
       if (pending || Date.now() - (this.loadedAt ?? 0) > 58000) this.refresh(cx);
     });
-    cx.timer.every(1000, (cx) => { const now = this.active(); if (now && !this.wasShown) this.refresh(cx); this.wasShown = now; });
   }
 
   checks() {
@@ -155,7 +121,7 @@ export default class PullRequest extends View {
   repo() { const m = /github\.com\/([^/]+)\/([^/]+)\/pull\//.exec(this.pr?.url ?? ""); return m ? { o: m[1], r: m[2] } : null; }
 
   refresh(cx) {
-    if (this.loading || !this.active()) return;
+    if (this.loading) return;
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
       this.context = context; this.root = null; this.branch = null; this.pr = null; this.threads = []; this.diffs = null;
@@ -562,7 +528,7 @@ export default class PullRequest extends View {
     const lines = this.diffs?.[path];
     if (!lines) return div().py(6).text_size(11).text_color(c.dim).child(this.diffs ? "No text diff for this file." : "");
     return v_flex().w_full().mb(G.sm).rounded(6).border_1().border_color(c.border).overflow_hidden().font_family(c.mono).text_size(11)
-      .children(diffRows(lines).map((r) => r.kind === "@"
+      .children(diffRows(lines, { max: MAX_DIFF, width: 400 }).map((r) => r.kind === "@"
         ? div().h(20).px(10).flex_none().truncate().text_color(c.dim).child(r.text)
         : h_flex().h(20).flex_none().gap(8).when(r.kind === "+", (e) => e.bg(c.green + "18")).when(r.kind === "-", (e) => e.bg(c.red + "18"))
           .child(div().w(30).flex_none().text_right().text_color(c.dim).child(r.number === undefined ? "" : String(r.number)))
@@ -610,7 +576,7 @@ export default class PullRequest extends View {
   }
 
   render(cx) {
-    if (key() !== this.context && this.active()) this.refresh(cx);
+    if (key() !== this.context) this.refresh(cx);
     const c = tokens(theme());
     const narrow = (this.width || 368) < 560;
     let body;

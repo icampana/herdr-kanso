@@ -7,7 +7,7 @@
 // beside the focused one without shrinking anything.
 //
 // How: in the "work-body" row, the layout's "main" node is replaced with what
-// the view shows. Each column in view is a header block (kanso-pane) over a
+// the view shows. Each column in view is a header block (a {pane} copy) over a
 // live `{terminal}` block (Herdr can't clip a terminal, so none is ever cut).
 // When columns lie beyond an edge, a narrow "edge" block (a copy of this mod)
 // stands there: a rail with a stack of tiles, one per pane beyond, and a card
@@ -21,7 +21,8 @@
 // Copies, chosen by props: none = the controller and minimap (status bar),
 // {edge: pane, side, count, panes} = the tab at an edge for the panes beyond it,
 // {ruler: <pane> | "h"} = a 1px block that measures a pane's width or the strip's height,
-// {drop: <pane>} = the card that stands in for a pane's terminal while a pane is held.
+// {drop: <pane>} = the card that stands in for a pane's terminal while a pane is held,
+// {pane, terminal} = a pane's header (the app passes these; the strip adds {strip: true}).
 //
 // State per tab in shared "strip.state": { cols: [{ panes, w, pin }], vx }
 //   w: column width as a share of the view; vx: the view's left edge on the
@@ -39,7 +40,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, HoverCard } from "gpui-base";
-import { spaces, panes, focused, layout, run, shared, setShared, theme, nextCommand, props, terminals } from "herdr";
+import { spaces, panes, focused, layout, run, shared, setShared, theme, nextCommand, props, terminals, openOverlay, home } from "herdr";
 
 // How many panes the view holds at once (`st.n`, 1 to 8; you choose). A new
 // column takes 1/n of the view; dragging the divider between two columns
@@ -65,7 +66,7 @@ const RADIUS = 8;
 const TAB_BLOCK = {
   id: "main", type: "block", background: "chrome",
   content: { tab: "active", pane: {
-    header: { content: { mod: "kanso-pane" }, reveal: "always", height: HEADER_H, position: "top" },
+    header: { content: { mod: "kanso-strip" }, reveal: "always", height: HEADER_H, position: "top" },
     background: "background", border: { width: 0, color: "border" }, focus: { width: 0, color: "border" },
     radius: RADIUS, gap: GAP, lone: false } },
 };
@@ -105,7 +106,10 @@ const nameOf = (info, given) => {
   const prog = info?.program;
   return given?.get(info?.terminal) || (prog?.agent || prog?.shell) && prog.name || info?.title || prog?.name || "Pane";
 };
-const iconOf = (prog, size, color) => !prog?.icon ? div().size(size) : prog.tint ? svg(prog.icon).size(size).flex_none().text_color(color) : image(prog.icon).w(size).h(size).flex_none();
+// A program's icon from the app's program table (null when it has none), and
+// the same with an empty square of its size in that case.
+const programIcon = (prog, size, color) => !prog?.icon ? null : prog.tint ? svg(prog.icon).size(size).flex_none().text_color(color) : image(prog.icon).w(size).h(size).flex_none();
+const iconOf = (prog, size, color) => programIcon(prog, size, color) ?? div().size(size);
 // Where on a pane the pointer is: the left and right quarters mean a column
 // of its own before or after; the middle, stacked above (upper half) or
 // below (lower half).
@@ -116,10 +120,23 @@ const zoneOf = (e, fallback = "below") => {
 };
 const endDrag = () => { setShared("strip.drop", null); setShared("strip.drag", null); };
 
+// The header (a {pane} copy): the terminal label that holds a name you gave
+// it, the rename dialog's width (kanso-prompt, as in the sidebar), how wide
+// the folder and branch may grow, and a folder shown from home.
+const NAME_LABEL = "kanso.name";
+const PROMPT_W = 420;
+const BADGE_MAX_W = 220;
+const folder = (cwd) => {
+  if (!cwd) return "";
+  const h = home();
+  return cwd === h ? "~" : cwd.startsWith(h + "/") ? "~" + cwd.slice(h.length) : cwd;
+};
+
 export default class Strip extends View {
   init(_props, cx) {
     const p = props() ?? {};
-    this.kind = p.edge ? "edge" : p.ruler ? "ruler" : p.drop ? "drop" : "controller";
+    this.kind = p.edge ? "edge" : p.ruler ? "ruler" : p.drop ? "drop" : p.pane ? "head" : "controller";
+    if (this.kind === "head") this.hovered = false;
     if (this.kind !== "controller") return;
 
     this.state = JSON.parse(JSON.stringify(shared(KEY) ?? {}));
@@ -129,20 +146,22 @@ export default class Strip extends View {
     this.pendingFocus = null;
     this.sets = [];
     // Scrolling writes the layout at most every 60 ms, however fast the wheel.
-    cx.timer.every(60, (cx) => { if (this.dirty) { this.dirty = false; cx.notify(); } });
+    this.seq = 0; // bumped by whatever changes the model outside render (see render's key)
+    cx.timer.every(60, (cx) => { if (this.dirty) { this.dirty = false; this.seq++; cx.notify(); } });
     // A drag on one of Herdr's dividers changes the tree without telling us.
     cx.timer.every(150, (cx) => {
       // A pane let go where nothing takes drops (a gutter) is held until
       // the next press or move over a pane; failing those, it ends here.
       const held = shared("strip.drag");
       if (held && Date.now() - held.at > DRAG_MAX) endDrag();
-      if (this.adopt()) cx.notify();
+      if (this.adopt()) { this.seq++; cx.notify(); }
     });
     cx.spawn(async (cx) => {
       for (;;) {
         let c;
         try { c = await nextCommand(); } catch { break; }
         this.command(String(c).replace(/^kanso-strip\./, ""));
+        this.seq++;
         cx.notify();
       }
     });
@@ -227,10 +246,19 @@ export default class Strip extends View {
     const drag = what !== "h" ? shared("strip.drag") : null;
     const takes = Boolean(drag) && drag.pane !== what;
     const drop = takes ? shared("strip.drop") : null;
-    return div().size_full().when(what !== "h", (el) => el.rounded_b(RADIUS).bg(t.background)).on_size_change((sz) => {
+    // A size change comes on every frame of a divider drag, and a shared write
+    // redraws every mod: the ruler notes each one and writes the last once the
+    // size has rested 120 ms (the controller adopts a drag after 250 ms).
+    return div().size_full().when(what !== "h", (el) => el.rounded_b(RADIUS).bg(t.background)).on_size_change((sz, cx) => {
       const v = Math.round(what === "h" ? sz.height : sz.width);
-      const px = shared(PX) ?? {};
-      if (v && px[what] !== v) setShared(PX, { ...px, [what]: v });
+      if (!v) return;
+      this.measured = v;
+      if (this.measuring) return;
+      this.measuring = cx.timer.after(120, () => {
+        this.measuring = null;
+        const px = shared(PX) ?? {};
+        if (px[what] !== this.measured) setShared(PX, { ...px, [what]: this.measured });
+      });
     })
       .when(takes, (el) => el.cursor_grabbing()
         .on_mouse_move(() => { const d = shared("strip.drop"); if (d?.to !== what || d.side !== "below") setShared("strip.drop", { to: what, side: "below" }); })
@@ -284,6 +312,184 @@ export default class Strip extends View {
       .child(!side ? div().absolute().inset_0().flex().child(label(me, false))
         : (across ? h_flex() : v_flex()).absolute().inset_0()
           .children(first ? [ghost(), label(me, false)] : [label(me, false), ghost()]));
+  }
+
+  // ---- The header: a {pane} copy ------------------------------------------------
+
+  // Derived from the `pane` mod shipped with Herdr (Apache-2.0), by way of
+  // 0OZ's and José Gutiérrez's quiet headers. Shows the program's icon, the
+  // name (yours, the agent's, or the terminal's title), the folder, the
+  // branch and the agent's status; on hover, buttons split, zoom and close
+  // the pane. In the strip (props.strip) it also slides the view on wheel,
+  // holds the pane on its grip and is the top of the pane's drop card. The
+  // app's own `{tab}` block (one pane, TAB_BLOCK) uses the same copy.
+  me() {
+    return panes().find((p) => p.pane === props()?.pane);
+  }
+
+  // A double-click on the header opens the rename dialog Herdr uses for
+  // spaces and tabs (`kanso-prompt`, which writes the terminal's label).
+  rename(p, shown) {
+    openOverlay({ mod: "kanso-prompt", kind: "dialog", width: PROMPT_W, props: {
+      title: "Rename terminal", value: shown, hint: "Empty: the name the program gives it",
+      label: { terminal: p.terminal, key: NAME_LABEL } } });
+  }
+
+  // Where the pane is: quiet text, no outline. The branch keeps its glyph.
+  // (`where` and `place` below are the model's.)
+  badge(t, text, iconPath, on) {
+    return h_flex().flex_shrink(1).min_w(0).max_w(BADGE_MAX_W).gap(4).items_center().text_size(11.5).text_color(on ? t.muted : t.dim)
+      .when(Boolean(iconPath), (el) => el.child(svg(iconPath).size(12).flex_none()))
+      .child(div().min_w(0).truncate().child(text));
+  }
+
+  // In the strip, a split first says where the new pane goes, and the zoom
+  // button cycles the column's width instead.
+  act(command, args) {
+    const pane = props()?.pane;
+    if (props()?.strip && command === "pane.split") setShared("strip.intent", { dir: args.direction, from: pane, at: Date.now() });
+    if (props()?.strip && command === "pane.zoom") { setShared("strip.req", { op: "width", pane, n: nonce() }); return; }
+    run(command, args);
+  }
+
+  // Wheel or swipe over a header slides the canvas continuously (600px of
+  // travel = one view width; a mouse notch = 40px).
+  wheelReq(e) {
+    const lines = e.delta_lines?.y ?? 0;
+    const d = lines ? -lines * 40 : (Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : -e.delta.y);
+    if (d) setShared("strip.req", { op: "scroll", d: d / WHEEL_PX, n: nonce() });
+  }
+
+  // The pane's folder in a code editor (the `open-with` mod), on the machine
+  // its space lives on.
+  openWith(p) {
+    const space = spaces().find((s) => s.tabs.some((x) => x.id === p.tab));
+    openOverlay({ mod: "open-with", kind: "popup", width: 340, props: { folder: p.cwd, machine: space?.machine ?? null } });
+  }
+
+  // The six-dot grip near the header's right edge: hold it and drag onto
+  // another pane to move this pane there (shared "strip.drag" while held;
+  // Ctrl+drag anywhere on the header does the same).
+  grip(t, pane) {
+    const held = shared("strip.drag")?.pane === pane;
+    return div().id(`grip-${pane}`).w(18).h_full().flex_none().flex().items_center().justify_center().cursor_grab()
+      .tooltip("Hold and drag onto another pane to move this one there")
+      .text_color(held ? t.foreground : t.dim)
+      .hover((h) => h.text_color(t.foreground))
+      .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); setShared("strip.drag", { pane, at: Date.now() }); })
+      // A press anywhere else while this pane is still held: it was let go
+      // where nothing took it, so the hold ends.
+      .on_mouse_down_out(() => { const d = shared("strip.drag"); if (d?.pane === pane && Date.now() - d.at > 300) endDrag(); })
+      .child(svg("mods/kanso-chrome/icons/grip-vertical.svg").size(14));
+  }
+
+  // While a pane is held, the header is the top of its pane's drop card: the
+  // left quarter means a column before this pane, the right quarter one
+  // after, the middle stacks the held pane above it (the card below has the
+  // zone for below). What the pointer says goes to shared "strip.drop".
+  dragMove(e, pane) {
+    const width = e.bounds?.width || this.width || 0;
+    if (width) this.width = width;
+    const d = shared("strip.drag");
+    if (!d || d.pane === pane || !width) return;
+    const x = e.local_position.x;
+    const side = x < width / 4 ? "before" : x > width * 3 / 4 ? "after" : "above";
+    const cur = shared("strip.drop");
+    if (cur?.to !== pane || cur.side !== side) setShared("strip.drop", { to: pane, side });
+  }
+
+  button(t, id, icon, command, args) {
+    return div().id(id).p(5).rounded(6).text_color(t.muted)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if (typeof command === "function") command();
+        else this.act(command, args);
+      })
+      .child(svg(`mods/kanso-chrome/icons/${icon}.svg`).size(15));
+  }
+
+  renderHead() {
+    const t = theme();
+    const p = this.me();
+    if (!p) return div();
+    const name = p.mod === "sdd-focused" ? "Spec" : nameOf(p, givenNames());
+    const pic = programIcon(p.program, 15, t.muted);
+    const st = p.status;
+    const pane = p.pane;
+    // No rule under it: the header is part of the pane. The selected pane's
+    // header is a shade lighter and its title in full ink; in the strip that
+    // is the pane the strip remembers, so it stays marked while a side panel
+    // has the keyboard. A pane whose agent needs you can't be missed: its
+    // header is tinted in the alarm color over a breathing bar of it.
+    const strip = Boolean(props()?.strip);
+    const remembered = strip ? shared(KEY)?.[p.tab]?.focus : null;
+    const on = remembered ? remembered === pane : p.focused || (strip && p.terminal && focused()?.terminal === p.terminal);
+    // A held pane: this header is the top of a drop card (see dragMove).
+    const drag = strip ? shared("strip.drag") : null;
+    const drop = drag && drag.pane !== pane ? shared("strip.drop") : null;
+    const side = drop?.to === pane ? drop.side : null;
+    const ink = on || st === "blocked"; // full ink: the selected pane, and one that needs you
+    // A pinned pane stays on its side of the view: a pin by its title says so.
+    const pinned = strip && Boolean(shared(KEY)?.[p.tab]?.cols?.find((c) => c.panes?.includes(pane))?.pin);
+    const pin = () => setShared("strip.req", { op: "pin", pane, n: nonce() });
+    return h_flex().id(`pane-head-${pane}`).size_full().pl(14).pr(6).gap(10).items_center().text_size(12.5).relative()
+      // The pane is a rounded slab; the header's wash follows its top corners.
+      .rounded_t(RADIUS)
+      // Pinned: the accent's tint, a little stronger when it's also the selected one.
+      .when(pinned && st !== "blocked", (el) => el.bg(t.accent + (on ? "40" : "24")))
+      .when(st === "blocked", (el) => el.bg(t.blocked + "66")
+        .child(div().absolute().left_0().bottom_0().w_full().h(2).bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })))
+      .when(on && !pinned && st !== "blocked", (el) => el.bg(t.selected))
+      // Where the held pane lands lights up in the accent, header and card as
+      // one: the left or right half for a column before or after, the whole
+      // header (the top of the pane) for above.
+      .when(Boolean(side), (el) => el.child(h_flex().absolute().inset_0().rounded_t(RADIUS)
+        .child(div().flex_1().h_full().when(side === "before" || side === "above", (d) => d.bg(t.accent + "40").rounded_tl(RADIUS).when(side === "above", (d) => d.rounded_tr(RADIUS))))
+        .child(div().flex_1().h_full().when(side === "after" || side === "above", (d) => d.bg(t.accent + "40").rounded_tr(RADIUS)))))
+      .when(Boolean(drag) && drag.pane === pane, (el) => el.opacity(0.4))
+      .when(Boolean(drag), (el) => el.cursor_grabbing())
+      .on_hover((hovered, cx) => {
+        this.hovered = hovered;
+        if (!hovered && shared("strip.drop")?.to === pane && shared("strip.drop")?.side !== "below") setShared("strip.drop", null);
+        cx.notify();
+      })
+      .on_size_change((sz) => { this.width = sz.width; })
+      .on_mouse_down("left", (e) => {
+        // A double-click renames the terminal; in the strip, Ctrl+press holds the pane.
+        if (e.click_count === 2 && p.terminal) { this.rename(p, name); return; }
+        if (!strip) return;
+        if (e.modifiers.control && !pinned) setShared("strip.drag", { pane, at: Date.now() });
+        else if (shared("strip.drag")) endDrag(); // a drag let go elsewhere
+      })
+      .when(strip, (el) => el
+        .on_scroll_wheel((e) => this.wheelReq(e))
+        .on_mouse_move((e) => this.dragMove(e, pane))
+        .on_mouse_up("left", () => {
+          const d = shared("strip.drag");
+          if (!d) return;
+          if (d.pane !== pane) setShared("strip.req", { op: "move", pane: d.pane, to: pane, side: side ?? "above", n: nonce() });
+          endDrag();
+        }))
+      .on_click(() => run("pane.focus", strip && p.terminal ? { terminal: p.terminal } : { pane }))
+      .when(Boolean(pic), (el) => el.child(pic.opacity(ink ? 1 : 0.75)))
+      .child(div().flex_none().truncate().max_w(260).text_size(12.5).when(ink, (el) => el.font_medium()).text_color(ink ? t.foreground : t.muted).child(name))
+      .when(Boolean(p.cwd), (el) => el.child(this.badge(t, folder(p.cwd), null, ink)))
+      .when(Boolean(p.branch), (el) => el.child(this.badge(t, p.branch, "mods/kanso-chrome/icons/branch.svg", ink)))
+      .when(pinned && !this.hovered, (el) => el.child(svg("mods/kanso-chrome/icons/pin.svg").size(12).flex_none().text_color(t.dim)))
+      .child(div().flex_1())
+      .when(st === "working" && !this.hovered, (el) => el.child(h_flex().w(12).h(12).flex_none().items_center().justify_center().text_size(10).text_color(t.working).child(div().frames(["·", "•", "●", "•"], 450))))
+      .when(st === "blocked", (el) => el.child(h_flex().flex_none().gap(6).items_center().text_size(11.5).font_medium().text_color(t.foreground)
+        .child(div().size(7).rounded_full().bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })).child("Needs you")))
+      .when(st === "done" && !this.hovered, (el) => el.child(div().size(6).flex_none().rounded_full().bg(t.done)))
+      .when(this.hovered && !drag, (el) => el
+        .when(strip, (el) => el.child(this.button(t, `ph-p-${pane}`, "pin", pin).when(pinned, (b) => b.text_color(t.foreground))))
+        .when(Boolean(p.cwd), (el) => el.child(this.button(t, `ph-o-${pane}`, "open-with", () => this.openWith(p))))
+        .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
+        .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
+        .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
+        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
+      .when(strip && !pinned, (el) => el.child(this.grip(t, pane)));
   }
 
   // ---- The model ---------------------------------------------------------------
@@ -667,7 +873,7 @@ export default class Strip extends View {
   build(st, ps, sorting = false) {
     const byId = new Map(ps.map((p) => [p.pane, p]));
     const weight = (f) => Math.max(1, Math.round(f * 1000));
-    const header = (id) => ({ id: `head-${id}`, type: "block", size: { px: HEADER_H }, content: { mod: "kanso-pane", props: { pane: id, terminal: byId.get(id).terminal, strip: true } } });
+    const header = (id) => ({ id: `head-${id}`, type: "block", size: { px: HEADER_H }, content: { mod: "kanso-strip", props: { pane: id, terminal: byId.get(id).terminal, strip: true } } });
     const body = (id) => ({ id: `term-${id}`, type: "block", content: sorting ? { mod: "kanso-strip", props: { drop: id } } : { terminal: byId.get(id).terminal } });
     // A pane's ruler is also its foot: a terminal paints square corners, so
     // the foot, RADIUS tall, draws the slab's rounded bottom over the frame.
@@ -749,6 +955,7 @@ export default class Strip extends View {
     if (this.kind === "edge") return this.renderEdge();
     if (this.kind === "ruler") return this.renderRuler();
     if (this.kind === "drop") return this.renderDrop();
+    if (this.kind === "head") return this.renderHead();
     const t = theme();
     if (this.halted && Date.now() - this.halted > 10000) { this.halted = 0; this.sets = []; this.applied = null; }
     if (this.halted) return h_flex().size_full().justify_center().items_center().text_size(11).text_color(t.blocked).child("Strip paused");
@@ -758,29 +965,38 @@ export default class Strip extends View {
     const usable = ps.length > 0 && ps.every((p) => p.terminal);
     if (!usable) { this.apply([TAB_BLOCK]); this.save(); return div(); }
 
-    const st = this.sync(tab, ps);
-    this.request(st, ps);
-    this.keepKeyboard(tab, st, ps);
-    const now = this.focusPane(ps);
-    // A focus change right after a slide is the slide's own doing: don't
-    // slide back to it.
-    if (now && now !== st.lastSeen) {
-      st.lastSeen = now;
-      if (Date.now() - (this.slidAt ?? 0) > 600) { st.focus = now; this.reveal(st, now); }
-    }
-    this.clampView(st);
-    // Sorting while one of this tab's panes is held; when it ends, the
-    // keyboard goes back to the pane that had it (its terminal was away).
-    const drag = shared("strip.drag");
-    const sorting = Boolean(drag) && ps.some((p) => p.pane === drag.pane);
-    if (this.sorting && !sorting) { if (shared("strip.drop")) setShared("strip.drop", null); this.focusOn(st, st.focus, ps); }
-    this.sorting = sorting;
-    this.apply(this.build(st, ps, sorting));
-    this.save();
+    // Every shared write anywhere redraws this view. The model only moves
+    // on what this key names (and on `seq`: commands, adopted drags, the
+    // wheel): with the key unchanged, only the minimap is drawn again.
+    const f = focused(), drag = shared("strip.drag");
+    const key = [tab, ps.map((p) => `${p.pane}:${p.terminal}`).join(","), f?.pane ?? "", f?.terminal ?? "", drag?.pane ?? "",
+      shared("strip.req")?.n ?? "", shared("strip.intent")?.at ?? "", this.seq].join("|");
+    let st = this.state[tab];
+    if (key !== this.lastKey || this.pendingFocus || !st) {
+      this.lastKey = key;
+      st = this.sync(tab, ps);
+      this.request(st, ps);
+      this.keepKeyboard(tab, st, ps);
+      const now = this.focusPane(ps);
+      // A focus change right after a slide is the slide's own doing: don't
+      // slide back to it.
+      if (now && now !== st.lastSeen) {
+        st.lastSeen = now;
+        if (Date.now() - (this.slidAt ?? 0) > 600) { st.focus = now; this.reveal(st, now); }
+      }
+      this.clampView(st);
+      // Sorting while one of this tab's panes is held; when it ends, the
+      // keyboard goes back to the pane that had it (its terminal was away).
+      const sorting = Boolean(drag) && ps.some((p) => p.pane === drag.pane);
+      if (this.sorting && !sorting) { if (shared("strip.drop")) setShared("strip.drop", null); this.focusOn(st, st.focus, ps); }
+      this.sorting = sorting;
+      this.apply(this.build(st, ps, sorting));
+      this.save();
 
-    if (this.pendingFocus) {
-      const shownNow = JSON.stringify(find(layout(), "work-body") ?? {}).includes(`"terminal":"${this.pendingFocus}"`);
-      if (shownNow) { run("pane.focus", { terminal: this.pendingFocus }); this.pendingFocus = null; }
+      if (this.pendingFocus) {
+        const shownNow = JSON.stringify(find(layout(), "work-body") ?? {}).includes(`"terminal":"${this.pendingFocus}"`);
+        if (shownNow) { run("pane.focus", { terminal: this.pendingFocus }); this.pendingFocus = null; }
+      }
     }
 
     // Minimap: one soft pill per column, as wide as its share of the view, no

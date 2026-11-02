@@ -113,7 +113,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       under 20% of the view; a pin that would leave less is refused). A
       pinned header has the `accent` at 14% (25% when selected) and a 12 px
       pin by the title; it has no grip.
-      Each pane has a 34-tall header (`kanso-pane`, always shown). The
+      Each pane has a 34-tall header (a `{pane}` copy of `kanso-strip`,
+      always shown). The
       selected pane's header has the `selected` background (in the strip, the
       pane the strip remembers, so it stays marked while a side panel has the
       keyboard). A pane whose agent needs you has `blocked` at 40% instead,
@@ -129,9 +130,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         close (15 icons).
       - Terminal padding is `[14, 10]`.
     - **Side panel**, at the right of the panes: 368 wide (280 to 900),
-      hidden by default. It holds whichever panel is open: `kanso-files`,
-      `insights`, `kanso-changes`, `kanso-pr` or `sdd-focused`.
-      The PR panel (`kanso-pr`) shows the open pull request of the focused
+      hidden by default. It holds whichever panel is open: `kanso-panel`
+      told `files`, `changes` or `pr` (`props.panel`), `token-spend`
+      (Insights) or `sdd-focused`.
+      The PR panel (`kanso-panel` with `pr`) shows the open pull request of the focused
       pane's branch, as T3 Code does, drawn like the Spend panel: one
       centered column (max 1080, 16 px sides under 560 wide, else 32), no
       cards or uppercase labels, `canvas` behind, hierarchy from size, weight
@@ -322,7 +324,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     - `inset` (column, no fill, no border):
       - `tabs`: block `kanso-tabs`, 48 px, `window_drag`.
       - `work-body` (row, `chrome` background, gap 6):
-        - `main`: `{tab: "active"}` with the `kanso-pane` header (height 34),
+        - `main`: `{tab: "active"}` with the `kanso-strip` header (height 34),
           radius 8, gap 6 and no pane borders. `kanso-strip` replaces it with
           the canvas's columns (`strip-*` nodes, `background`, radius 8) and
           puts it back for tabs it can't show.
@@ -346,8 +348,13 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     `strip.intent` (where the next new pane goes), `strip.drag` (the held
     pane) and `strip.drop` (where it would land). Copies with `{drop}` are
     the cards that stand in for terminals while a pane is held.
-  - `kanso-pane`: pane header. Double-click it to rename the terminal (the
-    same dialog and `kanso.name` label as the sidebar).
+    A `{pane, terminal}` copy (the app passes those to a header; the strip
+    adds `strip: true`) is the pane header: icon, name, folder, branch,
+    status, hover buttons, the grip and the wheel. Double-click it to
+    rename the terminal (the same dialog and `kanso.name` label as the
+    sidebar). The header lives in the strip so that one mod owns the
+    drag, the drop zones, the names and the icons; Herdr doesn't let a mod
+    import another's files.
   - `kanso-prompt`: Herdr's prompt dialog, copied, for what Herdr has no
     command for. Props `{title, value, hint}` and either `command: {name,
     args}` (runs it with `name`, as Herdr's prompt) or `label: {terminal,
@@ -369,10 +376,14 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     Cmd+Shift+O (`mod.open:open-with`, in `keys.json`) opens it.
   - `kanso-chrome`: the top strip's mark and the sidebar footer, plus the icon set.
   - `kanso-status`: status bar.
-  - `kanso-files`: lazy file tree via `sh`, git status marks.
-  - `kanso-changes`: git diff and commit.
-  - `kanso-pr`: the pull request panel, read with `gh pr view`, `gh pr diff`
-    and one GraphQL query for unresolved review threads (`gh api graphql`).
+  - `kanso-panel`: the three side panels in one mod, chosen by
+    `props.panel`; each is a plain class in its own file (`files.js`: lazy
+    file tree via `sh`, git status marks; `changes.js`: git diff and
+    commit; `pr.js`: the pull request panel, read with `gh pr view`, `gh pr
+    diff` and one GraphQL query for unresolved review threads) and `lib.js`
+    holds what they share (where the focused pane is, diff rows). A panel
+    exists only while `kanso-tabs` shows it, so it never polls the layout
+    to learn whether it is visible.
   - All are derived from Herdr's shipped mods (Apache-2.0) through the 0OZ
     and minimalistic forks, and all use `"place": "none"`.
 - **Optional mods it can show, not included**: `sdd-focused` (Specs, by José

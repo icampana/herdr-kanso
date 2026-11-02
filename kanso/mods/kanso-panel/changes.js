@@ -1,50 +1,18 @@
 // Derived from the `changes` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
 // Modified by 0OZ: root no longer draws its own rounded, bordered card.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-changes.
-// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-changes; idle while its panel is hidden.
-import { View, div } from "gpui-kit";
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-changes; one of the kanso-panel mod's panels.
+import { div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, layout, props } from "herdr";
+import { exec, readTextFile, watchFolder, theme, settings } from "herdr";
+import { location, key, diffRows } from "./lib.js";
 
-// Zen performance: as the side panel's block, work only while the panel shows
-// this mod. Hidden, its timer and file watch skip git and folder listings, and
-// it catches up the moment it is shown. As a pane (props given) it always works.
-function findNode(node, id) {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) { const found = findNode(child, id); if (found) return found; }
-  return null;
-}
-function panelShows(id) {
-  const tree = layout(), panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
-  const box = panel ?? body;
-  return !box || (!box.hidden && body?.active === id);
-}
-
-function location() {
-  const space = spaces().find((s) => s.active), f = focused();
-  const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
-  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
-}
-const key = () => JSON.stringify(location());
 const countLines = (text) => text ? text.split("\n").length - Number(text.endsWith("\n")) : 0;
 
-// Numbers each diff line once, so a frame only draws the rows on screen.
-function diffRows(lines) {
-  let old = 0, next = 0;
-  return lines.map((line) => {
-    const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
-    if (match) { old = +match[1]; next = +match[2]; return { kind: "@", text: line }; }
-    const kind = line[0];
-    if (kind === "-") return { kind, number: old++, text: line.slice(1) || " " };
-    if (kind === "+") return { kind, number: next++, text: line.slice(1) || " " };
-    if (kind === " ") { old++; return { kind, number: next++, text: line.slice(1) || " " }; }
-    return { kind: "", text: line };
-  });
-}
 
-export default class Changes extends View {
-  init(_props, cx) {
+// Exists only while shown (mounted on demand): always at work.
+export class Changes {
+  init(cx) {
     this.files = []; this.rows = []; this.diffWidth = 0; this.message = ""; this.handle = cx.focus_handle();
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => { this.message = this.input.value(); cx.notify(); });
@@ -52,11 +20,7 @@ export default class Changes extends View {
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     this.refresh(cx);
-    const p = props(); this.inPanel = !p || Object.keys(p).length === 0;
-    this.active = () => !this.inPanel || panelShows("changes");
-    this.wasShown = this.active();
-    cx.timer.every(10000, (cx) => { if (this.active()) this.refresh(cx); });
-    cx.timer.every(1000, (cx) => { const now = this.active(); if (now && !this.wasShown) this.refresh(cx); this.wasShown = now; });
+    cx.timer.every(10000, (cx) => this.refresh(cx));
   }
 
   watch(root, cx) {
@@ -66,7 +30,7 @@ export default class Changes extends View {
       try {
         while (this.watched === root) {
           await watchFolder(root);
-          if (this.watched === root && this.active()) this.refresh(cx);
+          if (this.watched === root) this.refresh(cx);
         }
       } catch { this.watched = null; }
     });

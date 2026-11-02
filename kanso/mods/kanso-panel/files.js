@@ -1,33 +1,13 @@
 // Derived from the `files` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
 // Modified by 0OZ: root no longer draws its own rounded, bordered card.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-files.
-// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-files; idle while its panel is hidden.
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-files; one of the kanso-panel mod's panels.
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
-import { View, div, svg } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, layout, props } from "herdr";
+import { exec, readTextFile, watchFolder, theme, settings, window } from "herdr";
+import { location, key } from "./lib.js";
 
-// Zen performance: as the side panel's block, work only while the panel shows
-// this mod. Hidden, its timer and file watch skip git and folder listings, and
-// it catches up the moment it is shown. As a pane (props given) it always works.
-function findNode(node, id) {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) { const found = findNode(child, id); if (found) return found; }
-  return null;
-}
-function panelShows(id) {
-  const tree = layout(), panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
-  const box = panel ?? body;
-  return !box || (!box.hidden && body?.active === id);
-}
-
-function location() {
-  const space = spaces().find(s => s.active), f = focused();
-  const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
-  const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
-}
-const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
 
@@ -46,22 +26,20 @@ async function directory(path, on) {
   return out;
 }
 
-export default class Files extends View {
-  init(_props, cx) {
+// The panel exists only while it is shown (kanso-tabs mounts it on demand),
+// so it always works: no idle state to keep.
+export class Files {
+  init(cx) {
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
-    const p = props(); this.inPanel = !p || Object.keys(p).length === 0;
-    this.active = () => !this.inPanel || panelShows("files");
-    this.wasShown = this.active();
-    cx.timer.every(10000, cx => { if (this.active()) this.refresh(cx); });
-    cx.timer.every(1000, cx => { const now = this.active(); if (now && !this.wasShown) this.refresh(cx); this.wasShown = now; });
+    cx.timer.every(10000, cx => this.refresh(cx));
   }
 
   watch(root, cx) {
     if (this.on || this.watched === root) return;
     this.watched = root;
     cx.spawn(async cx => {
-      try { while (this.watched === root) { await watchFolder(root); if (this.watched === root && this.active()) this.refresh(cx); } }
+      try { while (this.watched === root) { await watchFolder(root); if (this.watched === root) this.refresh(cx); } }
       catch { if (this.watched === root) this.watched = null; }
     });
   }
@@ -152,8 +130,8 @@ export default class Files extends View {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(6).cursor_pointer().hover(s => s.bg(t.hover))
         .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.show(path, cx))
-        .child(entry.dir ? svg(`mods/kanso-files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(svg(`mods/kanso-files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
+        .child(entry.dir ? svg(`mods/kanso-panel/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
+        .child(svg(`mods/kanso-panel/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
         .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
       if (entry.dir && open) this.rows(path, depth + 1, out, t);

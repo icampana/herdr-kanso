@@ -81,7 +81,7 @@
                     "pane": {
                       "header": {
                         "content": {
-                          "mod": "kanso-pane"
+                          "mod": "kanso-strip"
                         },
                         "reveal": "always",
                         "height": 34,

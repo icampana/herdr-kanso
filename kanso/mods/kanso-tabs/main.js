@@ -24,7 +24,11 @@ function specsBadge(space, t) {
 // the open one. Closing removes it from the layout, so Herdr ends that mod
 // (its timers, watches and processes stop); opening adds a fresh copy. Nothing
 // you aren't looking at runs.
-const PANELS = { files: "kanso-files", insights: "token-spend", changes: "kanso-changes", pr: "kanso-pr", specs: "sdd-focused" };
+// Each panel's block content: Files, Changes and PR are one mod (kanso-panel) told which panel it is.
+const PANELS = {
+  files: { mod: "kanso-panel", props: { panel: "files" } }, changes: { mod: "kanso-panel", props: { panel: "changes" } }, pr: { mod: "kanso-panel", props: { panel: "pr" } },
+  insights: { mod: "token-spend" }, specs: { mod: "sdd-focused" },
+};
 
 const TAB_H = 26; // inside the 2px padding of the pill, so the pill is 30px
 const CLEAR = "#00000000";
@@ -45,7 +49,7 @@ export default class Tabs extends View {
     // Specs and Insights are separate mods: offer each only where it is installed.
     this.installed = {};
     for (const id of ["specs", "insights"]) cx.spawn(async (cx) => {
-      try { await readTextFile(`${appHome()}/mods/${PANELS[id]}/main.js`); this.installed[id] = true; cx.notify(); } catch {}
+      try { await readTextFile(`${appHome()}/mods/${PANELS[id].mod}/main.js`); this.installed[id] = true; cx.notify(); } catch {}
     });
   }
 
@@ -64,7 +68,7 @@ export default class Tabs extends View {
     const tree = layout();
     const panel = find(tree, "panel"), body = find(tree, "panel-body");
     if (!body || (id && !PANELS[id])) return;
-    body.children = id ? [{ id, type: "block", content: { mod: PANELS[id] } }] : [];
+    body.children = id ? [{ id, type: "block", content: { ...PANELS[id] } }] : [];
     if (id) body.active = id; else delete body.active;
     (panel ?? body).hidden = !id;
     this.want = id;

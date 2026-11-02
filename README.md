@@ -62,7 +62,7 @@ in the one you pick. To find them it runs `sh` (app folders, `command -v`,
 icon as a PNG with `plutil` and `sips` under
 `~/.config/herdr-app/data/open-with/`.
 
-The PR panel (`kanso-pr`, the PR button in the tab bar) shows the open pull
+The PR panel (`kanso-panel`, the PR button in the tab bar) shows the open pull
 request of the focused pane's branch, as T3 Code does, in the Spend panel's
 style: whether it can merge, checks, unresolved threads and the files with
 their diff. You manage it there: assign it to yourself or others, ask for or
