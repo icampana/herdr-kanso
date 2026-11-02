@@ -7,8 +7,14 @@ import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import vm from "node:vm";
 
+// Compares Kanso at a git ref (--base, default origin/main) with your working
+// tree: folder listing, the Files tree drawn by a real Herdr window, and the
+// strip's layout writes. See benchmarks/README.md.
 assert.equal(process.platform, "darwin", "This benchmark targets macOS.");
-const args = new Set(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const args = new Set(argv);
+const baseRef = argv.includes("--base") ? argv[argv.indexOf("--base") + 1] : "origin/main";
+assert.ok(baseRef && !baseRef.startsWith("--"), "--base needs a git ref, e.g. --base v1.0 or --base main");
 const quick = args.has("--quick");
 const root = resolve(new URL("..", import.meta.url).pathname);
 const output = resolve(process.env.KANSO_BENCH_OUTPUT ?? "benchmarks/results/macos");
@@ -19,16 +25,13 @@ const app = process.env.KANSO_BENCH_APP ?? "herdr-app";
 let activeChild;
 process.on("exit", () => { if (activeChild?.exitCode === null) activeChild.kill("SIGTERM"); });
 process.on("SIGINT", () => process.exit(130));
-const variants = ["base", "pr", "current"];
-const refs = {
-  base: execFileSync("git", ["rev-parse", "HEAD^"], { cwd: root, encoding: "utf8" }).trim(),
-  pr: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
-};
+const variants = ["base", "current"];
+const refs = { base: execFileSync("git", ["rev-parse", baseRef], { cwd: root, encoding: "utf8" }).trim() };
 const source = (variant, file) => variant === "current"
   ? readFileSync(join(root, file), "utf8")
   : execFileSync("git", ["show", `${refs[variant]}:${file}`], { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-const hash = execFileSync("git", ["diff", "--", "kanso"], { cwd: root, encoding: "utf8" });
-writeFileSync(join(output, "working-tree.patch"), hash);
+// What "current" means, exactly: the working tree's difference from base.
+writeFileSync(join(output, "current.patch"), execFileSync("git", ["diff", refs.base, "--", "kanso"], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 }));
 const results = {
   timestamp: new Date().toISOString(), refs, scratch, host: {
     os: execFileSync("sw_vers", [], { encoding: "utf8" }).trim(), arch: process.arch,
@@ -69,11 +72,12 @@ async function listing() {
     }
     for (let iteration = -2; iteration < (quick ? 7 : 21); iteration++) {
       for (let k = 0; k < variants.length; k++) {
-        const variant = variants[(k + iteration + 3) % 3];
+        const variant = variants[(k + iteration + variants.length) % variants.length];
         const start = performance.now();
         const list = await listers[variant](folder, null);
         const elapsedMs = performance.now() - start;
-        assert.equal(list.length, Math.min(count, variant === "pr" ? 500 : 501));
+        // 501 tells the panel a folder was cut short; older versions read 500.
+        assert.ok(list.length >= Math.min(count, 500) && list.length <= Math.min(count, 501), `${variant}: ${list.length} entries`);
         if (iteration >= 0) results.listing.push({ variant, count, iteration, elapsedMs, entries: list.length });
       }
     }
@@ -108,8 +112,8 @@ function layout() {
         return { variant, count, elapsedMs: performance.now() - start, cpuMs: (cpu.user + cpu.system) / 1000, writes, sharedWrites, bytes };
       };
     }
-    for (let iteration = -2; iteration < 9; iteration++) for (let k = 0; k < 3; k++) {
-      const variant = variants[(k + iteration + 3) % 3], r = instances[variant]();
+    for (let iteration = -2; iteration < 9; iteration++) for (let k = 0; k < variants.length; k++) {
+      const variant = variants[(k + iteration + variants.length) % variants.length], r = instances[variant]();
       if (iteration >= 0) results.layout.push({ ...r, iteration });
     }
     save(); console.log(`Layout ${count} panes: measured JS + serialized host payloads (not GPUI frame time).`);
@@ -130,8 +134,8 @@ async function native() {
   const invalid = new Set();
   for (const rows of (quick ? [5000] : [500, 5000])) {
     for (let iteration = 0; iteration < (quick ? 1 : 3); iteration++) {
-      for (let k = 0; k < 3; k++) {
-        const variant = variants[(k + iteration) % 3];
+      for (let k = 0; k < variants.length; k++) {
+        const variant = variants[(k + iteration) % variants.length];
         if (invalid.has(variant)) continue;
         const home = join(scratch, `native-${rows}-${iteration}-${variant}`), mod = join(home, "mods/benchmark");
         mkdirSync(mod, { recursive: true }); mkdirSync(join(home, "layouts"));

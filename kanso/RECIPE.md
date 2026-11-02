@@ -5,8 +5,8 @@ greys, no outlines, no decoration: the selected pane's header is a shade
 lighter and its title the only text in full ink, and color appears only when
 an agent's state matters (working, needs you, finished). Its second idea is that nothing you aren't looking at runs:
 side panels exist only while open, and background checks slow down when the
-window is behind others. Its third is an endless strip of panes, as in
-Omarchy's scrolling layout: a new pane opens beside the focused one at its own
+window is behind others. Its third is an endless strip of panes: a new pane
+opens beside the focused one at its own
 width, nothing shrinks, and the view slides to it. The name is the Japanese
 principle of simplicity, removing what is not needed.
 

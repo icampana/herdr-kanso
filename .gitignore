@@ -1,0 +1,7 @@
+# Benchmark runs: raw samples, screenshots and the generated report
+benchmarks/results/
+# Written by `herdr-app check` into the mod folders it checks
+kanso/mods/*/gpui-kit.d.ts
+kanso/mods/*/jsconfig.json
+node_modules/
+.DS_Store
