@@ -184,6 +184,8 @@ export default class Strip extends View {
     const show = (id) => setShared("strip.req", { op: "focus", pane: id, n: nonce() });
     const given = givenNames();
     const name = (info) => nameOf(info, given), icon = iconOf;
+    const drag = shared("strip.drag");
+    const takes = Boolean(drag) && drag.pane !== p.edge; // a held pane can land beyond this edge
     const dot = (st, size) => st === "working" ? div().size(size).rounded_full().bg(t.working).loop("opacity", { from: 0.35, to: 1, period: 1800 })
       : st === "blocked" ? div().size(size).rounded_full().bg(t.blocked).loop("opacity", { from: 0.45, to: 1, period: 1600 })
       : st === "done" ? div().size(size).rounded_full().bg(t.done) : null;
@@ -214,8 +216,6 @@ export default class Strip extends View {
       .child(div().h(22).px(8).flex().items_center().text_size(11).text_color(t.dim)
         .child(`${ids.length === 1 ? "One pane" : `${ids.length} panes`} beyond the ${left ? "left" : "right"} edge`))
       .children(ids.map(rowOf));
-    const drag = shared("strip.drag");
-    const takes = Boolean(drag) && drag.pane !== p.edge; // a held pane can land beyond this edge
     return v_flex().id("edge").size_full().items_center().justify_center().bg(t.chrome).cursor_pointer()
       .hover((h) => h.bg(takes ? t.accent + "40" : t.hover))
       // While a pane is held the rail is a target too: lit in the accent,

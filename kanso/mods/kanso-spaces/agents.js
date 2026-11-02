@@ -111,12 +111,13 @@ export function agentRow(a, indent, t, drag) {
     .when(a.focused, (el) => el.bg(t.foreground + "0c"))
     .hover((s) => s.bg(t.foreground + "0c"))
     .on_click(() => run("pane.focus", { pane: a.pane }))
-    .on_mouse_down("left", (e) => { if (e.click_count === 2) renameTerminal(a.address, agentLabel(a)); })
+    // One press handler: a second one would replace it. A double-click
+    // renames; a press starts a drag (when the row can be dragged).
+    .on_mouse_down("left", (e) => { if (e.click_count === 2) renameTerminal(a.address, agentLabel(a)); else drag?.down(); })
     // Dropping: a line on the side the pane will land on.
     .when(drag?.target === "before", (el) => el.border_t(2).border_color(t.accent))
     .when(drag?.target === "after", (el) => el.border_b(2).border_color(t.accent))
-    .when(Boolean(drag), (el) => el.on_mouse_down("left", () => drag.down()).on_mouse_up("left", (_e, cx) => drag.up(cx))
-      .on_hover((h, cx) => drag.hover(h, cx)))
+    .when(Boolean(drag), (el) => el.on_mouse_up("left", (_e, cx) => drag.up(cx)).on_hover((h, cx) => drag.hover(h, cx)))
     .when(Boolean(pic), (el) => el.child(pic.opacity(a.focused ? 1 : 0.8)))
     .child(div().flex_1().min_w(0).truncate()
       .text_color(a.focused ? t.foreground : idle ? t.dim : t.muted)
