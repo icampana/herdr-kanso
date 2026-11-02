@@ -3,7 +3,10 @@
 **A calm, fast layout for [Herdr](https://herdr.dev), made for working with
 many coding agents at once.**
 
-![Kanso: the sidebar of spaces and their agents, and two panes side by side on the strip](kanso/preview.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/hero-light.png">
+  <img alt="Kanso: three repositories in the sidebar, two agents side by side (one working, one waiting for your answer) and the pull request panel" src="kanso/preview.png">
+</picture>
 
 Kanso is the Japanese principle of simplicity: remove what is not needed.
 Everything on screen is there because you need it now, and nothing you are not
@@ -19,11 +22,15 @@ looking at keeps running.
   opens beside the one you are in, at its own width, and the view slides to
   it. Pick how many fit the view (1 to 8); a slim rail at the edge shows what
   lies beyond, and a minimap shows where you are.
+
+  ![Three panes on the strip: an agent at work, an agent waiting for you, and a dev server](docs/screenshots/strip.png)
 - **Review the work without leaving.** Side panels for **Files** (with
   Markdown and code preview), **Changes** (diffs and a commit) and **Pull
   requests**: every open one in the repository, with checks, unresolved
   threads, reviewers, labels and merge, and one click to ask your agent to
   explain a pull request, address its feedback or resolve its conflicts.
+
+  ![The Changes panel beside two agents: the files a branch changed and their diff](docs/screenshots/changes.png)
 - **Light on your machine.** Side panels exist only while open, background
   checks slow down when the window is behind others, and the Files tree draws
   only the rows on screen: 78% less CPU on a 500-row tree, and a 50,000-file
@@ -33,6 +40,8 @@ looking at keeps running.
   a JetBrains IDE, Xcode, or Neovim, Helix and Vim in a split.
 - **Keyboard first, mouse friendly.** Every move has a key; panes also drag,
   resize and pin with the mouse.
+
+The repositories, agents and pull requests in these screenshots are a demo.
 
 ## Install
 
