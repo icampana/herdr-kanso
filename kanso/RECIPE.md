@@ -232,12 +232,24 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     drop cards show the same name. Herdr has no terminal rename of its
     own; labels are its metadata.
     Right-click opens the shipped space menu.
-  - Click an agent row to focus its pane. Sessions are listed in the order
-    the strip shows their panes, tab by tab; drag one onto another in the
-    tab on screen to move its pane there (a 2px `accent` line shows where).
-    A pinned pane shows a pin and doesn't move. Panes stacked in one
-    column on screen are held together in one soft slab (`foreground` at
-    3%, radius 6), so the sidebar shows what is linked.
+  - Click a session row to focus its pane. Sessions are listed as T3 Code
+    lists its threads: the pinned ones first, in the order you drag them,
+    then the rest in the order chosen with the order button at the top of
+    the sidebar (a Popover over the list, a check on the current one,
+    remembered in localStorage `spaces.order`): last update (Herdr's `seq`,
+    the default, as in T3 Code), needs you first (blocked, done, working,
+    idle, then last update), by kind (agents by their program, then
+    shells, then the rest), as on screen (the strip's order, tab by tab,
+    with the panes stacked in one column held together in one soft slab,
+    `foreground` at 3%, radius 6), or your own order (drag a session where
+    you want it; per space, localStorage `spaces.custom`; new sessions
+    join at the end by last update). The pin is the `kanso.pin` label on
+    the terminal (its number is its place; pinning adds it last among the
+    pinned, a drag among the pinned renumbers them through `hc label`),
+    shown always on a pinned row and on hover on the rest; a click pins or
+    unpins. A drag only reorders within its section (the pinned, or your
+    order) and shows a 2px `accent` line where it lands; moving a pane in
+    the strip is the header grip's job.
   - Every terminal in the space is listed, not only the agents that report
     a status to Herdr: after those come the rest (Codex and other models'
     CLIs, shells, servers) with their program's icon, their title (a shell's

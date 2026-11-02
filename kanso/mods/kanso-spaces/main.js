@@ -8,8 +8,8 @@
 // switch, right-click for its menu, drag to reorder.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { agentRow, agentFold, withTerminals, givenNames } from "./agents.js";
+import { v_flex, h_flex, Popover } from "gpui-base";
+import { agentRow, agentFold, withTerminals, labelsOf, NAME_LABEL, PIN_LABEL, ORDERS, DEFAULT_ORDER, orderSessions, moved } from "./agents.js";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
@@ -78,6 +78,11 @@ export default class Spaces extends View {
     this.machines = [];
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.agentsFolded = new Set(JSON.parse(localStorage.getItem("spaces.agentsFolded") ?? "[]"));
+    // How sessions are listed (ORDERS), and your own order per space.
+    this.order = localStorage.getItem("spaces.order") in ORDERS ? localStorage.getItem("spaces.order") : DEFAULT_ORDER;
+    this.custom = JSON.parse(localStorage.getItem("spaces.custom") ?? "{}");
+    this.orderOpen = false;
+    this.hoverRow = null;
     this.migrate();
     this.refreshMachines(cx);
     // `hc machine ls` is a process: every 30 s while the window is in front,
@@ -269,18 +274,18 @@ export default class Spaces extends View {
     return list.map((a, i) => [a, i]).sort((x, y) => (x[0].tab_index - y[0].tab_index) || (pos(x[0]) - pos(y[0])) || (x[1] - y[1])).map(([a]) => a);
   }
 
-  // The rows of a space, with the panes that share a strip column (stacked
-  // one over another) held together in one soft slab, so the sidebar shows
-  // what is linked on screen.
-  stacked(mine, indent, t) {
+  // The rows of a space. In the "as on screen" order, the panes that share
+  // a strip column (stacked one over another) are held together in one soft
+  // slab, so the sidebar shows what is linked on screen.
+  stacked(mine, indent, t, space) {
     const state = shared("strip.state") ?? {};
-    const colOf = (a) => { const c = (state[a.tab]?.cols ?? []).find((k) => k.panes?.includes(a.pane)); return c && c.panes.length > 1 ? `${a.tab}:${c.panes[0]}` : null; };
+    const colOf = (a) => { if (this.order !== "screen" || a.pin != null) return null; const c = (state[a.tab]?.cols ?? []).find((k) => k.panes?.includes(a.pane)); return c && c.panes.length > 1 ? `${a.tab}:${c.panes[0]}` : null; };
     const out = [];
     for (let i = 0; i < mine.length;) {
       const key = colOf(mine[i]);
       let j = i + 1;
       while (key && j < mine.length && colOf(mine[j]) === key) j++;
-      const rows = mine.slice(i, j).map((a) => agentRow(a, indent, t, this.reorder(a, mine)));
+      const rows = mine.slice(i, j).map((a) => agentRow(a, indent, t, this.rowOf(a, mine, space)));
       if (key && rows.length > 1) out.push(v_flex().id(`stack-${key}`).flex_none().rounded(6).bg(t.foreground + "08").children(rows));
       else out.push(...rows);
       i = j;
@@ -288,26 +293,80 @@ export default class Spaces extends View {
     return out;
   }
 
-  // Drag a session onto another in the same tab (the one on screen) to move
-  // its pane there in the strip. Pinned panes stay where they are.
-  reorder(a, mine) {
-    const state = shared("strip.state") ?? {};
-    const pinnedOf = (x) => Boolean(state[x.tab]?.cols?.find((c) => c.panes?.includes(x.pane))?.pin);
-    const shownTab = spaces().find((s) => s.active)?.tabs?.find((x) => x.active)?.id;
+  // ---- Order: pins, your order, the chosen order -------------------------------
+
+  setOrder(mode, cx) {
+    this.order = mode;
+    localStorage.setItem("spaces.order", mode);
+    this.orderOpen = false;
+    cx.notify();
+  }
+
+  // The pin is the `kanso.pin` label on the terminal: its number is its
+  // place among the pinned. Pinning puts it last among them; a drag among
+  // the pinned renumbers them.
+  togglePin(a, mine) {
+    if (a.pin != null) { hc(["label", a.address, `${PIN_LABEL}=`]).catch(() => {}); return; }
+    const last = Math.max(0, ...mine.filter((x) => x.pin != null).map((x) => x.pin));
+    hc(["label", a.address, `${PIN_LABEL}=${last + 1}`]).catch(() => {});
+  }
+
+  setPins(addresses) {
+    addresses.forEach((address, i) => hc(["label", address, `${PIN_LABEL}=${i + 1}`]).catch(() => {}));
+  }
+
+  // A drop: among the pinned it renumbers the pins; in your own order it
+  // moves the session in that space's list.
+  dropped(d, a, mine, side, space) {
+    if (d.section === "pinned") this.setPins(moved(mine.filter((x) => x.pin != null).map((x) => x.address), d.address, a.address, side));
+    else {
+      const list = mine.filter((x) => x.pin == null).map((x) => x.address);
+      this.custom[space] = moved(list, d.address, a.address, side);
+      localStorage.setItem("spaces.custom", JSON.stringify(this.custom));
+    }
+  }
+
+  // What a row needs: whether it can be dragged (a pinned session among the
+  // pinned; any other in your own order), the hover for its pin, the pin.
+  rowOf(a, mine, space) {
+    const section = a.pin != null ? "pinned" : this.order === "custom" ? "custom" : null;
     const from = this.draggedAgent;
-    const ok = from && from.pane !== a.pane && from.tab === a.tab && a.tab === shownTab && !pinnedOf(a) && !from.pinned;
+    const ok = Boolean(section && from && from.address !== a.address && from.space === space && from.section === section);
+    const side = () => (from.at < mine.indexOf(a) ? "after" : "before");
     return {
-      pinned: pinnedOf(a),
-      target: ok && this.overAgent === a.pane ? (from.at < mine.indexOf(a) ? "after" : "before") : null,
-      hover: (h, cx) => { if (h && this.draggedAgent && this.overAgent !== a.pane) { this.overAgent = a.pane; cx.notify(); } },
-      down: () => { this.draggedAgent = { pane: a.pane, tab: a.tab, pinned: pinnedOf(a), at: mine.indexOf(a) }; this.overAgent = null; },
-      up: (cx) => {
-        const d = this.draggedAgent;
-        this.draggedAgent = null;
-        if (ok) setShared("strip.req", { op: "move", pane: d.pane, to: a.pane, side: d.at < mine.indexOf(a) ? "after" : "before", n: Date.now() + Math.random() });
-        cx.notify();
+      hovered: this.hoverRow === a.address,
+      hover: (h, cx) => {
+        let changed = false;
+        if (h && this.draggedAgent && this.overAgent !== a.address) { this.overAgent = a.address; changed = true; }
+        if (h ? this.hoverRow !== a.address : this.hoverRow === a.address) { this.hoverRow = h ? a.address : null; changed = true; }
+        if (changed) cx.notify();
       },
+      pin: () => this.togglePin(a, mine),
+      drag: section ? {
+        target: ok && this.overAgent === a.address ? side() : null,
+        down: () => { this.draggedAgent = { address: a.address, space, section, at: mine.indexOf(a) }; this.overAgent = null; },
+        up: (cx) => { const d = this.draggedAgent; this.draggedAgent = null; if (ok) this.dropped(d, a, mine, side(), space); cx.notify(); },
+      } : null,
     };
+  }
+
+  // The order picker in the sidebar's top row: the SDK's Popover over a
+  // list of the orders, a check on the current one.
+  orderPicker(t) {
+    const trigger = div().id("spaces-order").size(28).flex_none().rounded(6).flex().items_center().justify_center().cursor_pointer()
+      .text_color(this.order === DEFAULT_ORDER ? t.dim : t.muted).tooltip(`Order: ${ORDERS[this.order]}`)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .child(svg("mods/kanso-chrome/icons/sort.svg").size(14));
+    const item = (mode) => h_flex().id(`spaces-order-${mode}`).h(28).px(8).gap(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
+      .text_color(mode === this.order ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => this.setOrder(mode, cx))
+      .child(div().flex_1().child(ORDERS[mode]))
+      .when(mode === this.order, (el) => el.child(div().text_size(11).child("\u2713")));
+    return Popover.new("spaces-order-popover").trigger(trigger).anchor("top_left")
+      .open(this.orderOpen).on_open_change((open, cx) => { this.orderOpen = open; cx.notify(); })
+      .content(v_flex().w(200).p(4).gap(1).rounded(8).bg(t.popover).border_1().border_color(t.border)
+        .child(div().h(24).px(8).flex().items_center().text_size(11).text_color(t.dim).child("Sessions, pinned first, then by"))
+        .children(Object.keys(ORDERS).map(item)));
   }
 
   // The rows, under a header per machine once one isn't this computer.
@@ -315,13 +374,16 @@ export default class Spaces extends View {
   // (a double-click on the row opens the rename dialog).
   grouped(t, collapsed) {
     const rows = this.ordered();
-    const given = givenNames();
-    const all = withTerminals(agents(), panes(), spaces()).map((a) => given.has(a.address) ? { ...a, name: given.get(a.address) } : a);
+    const labels = labelsOf();
+    const all = withTerminals(agents(), panes(), spaces()).map((a) => {
+      const l = labels.get(a.address), pin = l?.[PIN_LABEL];
+      return { ...a, name: l?.[NAME_LABEL] || undefined, pin: pin != null && pin !== "" && !Number.isNaN(Number(pin)) ? Number(pin) : null };
+    });
     const draw = (r) => {
       if (collapsed) return this.compact(r, t);
-      const mine = this.inStripOrder(all.filter((a) => a.space === r.w.id));
+      const mine = orderSessions(this.inStripOrder(all.filter((a) => a.space === r.w.id)), this.order, this.custom[r.w.id] ?? []);
       const open = !this.agentsFolded.has(r.w.id);
-      return [this.row(r, t, mine), ...(open ? this.stacked(mine, r.tree ? CHILD_PAD : 0, t) : [])];
+      return [this.row(r, t, mine), ...(open ? this.stacked(mine, r.tree ? CHILD_PAD : 0, t, r.w.id) : [])];
     };
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name)])].sort();
     const loading = m => {
@@ -529,6 +591,7 @@ export default class Spaces extends View {
       : h_flex().h(40).px(10).gap(4).items_center()
         .child(plus)
         .child(div().flex_1())
+        .child(this.orderPicker(t))
         .child(search)
         .child(hide);
     return v_flex().id("spaces-root").size_full().min_h(0).bg(t.chrome).text_size(13)

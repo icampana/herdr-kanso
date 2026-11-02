@@ -11,13 +11,59 @@ const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 
-// A name you gave a terminal (double-click its row or its pane header) is
-// the `kanso.name` label on the terminal itself, in herdr-core: it survives
-// a restart and every Kanso mod reads the same one. By address.
+// What you told Kanso about a terminal lives as labels on the terminal
+// itself, in herdr-core, so it survives a restart and every Kanso mod reads
+// the same: `kanso.name` is the name you gave it (double-click its row or
+// its pane header), `kanso.pin` its place among the pinned sessions (the
+// pin on its row). By address.
 export const NAME_LABEL = "kanso.name";
+export const PIN_LABEL = "kanso.pin";
+export function labelsOf() {
+  const out = new Map();
+  for (const term of terminals()) if (term?.labels) out.set(term.address, term.labels);
+  return out;
+}
 export function givenNames() {
   const out = new Map();
-  for (const term of terminals()) { const n = term?.labels?.[NAME_LABEL]; if (n) out.set(term.address, n); }
+  for (const [address, labels] of labelsOf()) if (labels[NAME_LABEL]) out.set(address, labels[NAME_LABEL]);
+  return out;
+}
+
+// ---- Order ----------------------------------------------------------------------
+
+// How a space's sessions are listed, as T3 Code lists its threads: the
+// pinned ones first, in the order you drag them, then the rest by the order
+// you chose. `seq` is Herdr's "changed more recently" counter.
+export const ORDERS = {
+  updated: "Last update",
+  attention: "Needs you first",
+  type: "By kind",
+  screen: "As on screen",
+  custom: "Your order (drag)",
+};
+export const DEFAULT_ORDER = "updated";
+const KIND = (a) => (a.program?.agent || a.app ? 0 : a.program?.shell ? 1 : 2);
+const kindName = (a) => (a.app || a.program?.name || "").toLowerCase();
+
+// `list` comes in screen order (the stable tiebreak); `custom` is the
+// addresses in the order you dragged them, for the custom order.
+export function orderSessions(list, mode, custom = []) {
+  const by = (cmp) => list.map((a, i) => [a, i]).sort((x, y) => cmp(x[0], y[0]) || x[1] - y[1]).map(([a]) => a);
+  const fresh = (x, y) => (y.seq ?? 0) - (x.seq ?? 0);
+  const rest = mode === "attention" ? by((x, y) => (RANK[y.status] ?? 0) - (RANK[x.status] ?? 0) || fresh(x, y))
+    : mode === "type" ? by((x, y) => KIND(x) - KIND(y) || kindName(x).localeCompare(kindName(y)) || fresh(x, y))
+    : mode === "screen" ? list
+    : mode === "custom" ? by((x, y) => { const i = custom.indexOf(x.address), j = custom.indexOf(y.address); return (i < 0 ? 1e9 : i) - (j < 0 ? 1e9 : j) || fresh(x, y); })
+    : by(fresh);
+  const pinned = rest.filter((a) => a.pin != null).sort((x, y) => x.pin - y.pin);
+  return [...pinned, ...rest.filter((a) => a.pin == null)];
+}
+
+// A list with `address` moved before or after `target` (both in it).
+export function moved(order, address, target, side) {
+  const out = order.filter((x) => x !== address);
+  const at = out.indexOf(target);
+  out.splice(side === "after" ? at + 1 : at, 0, address);
   return out;
 }
 
@@ -97,33 +143,41 @@ export function agentFold(id, mine, open, onToggle, t) {
     .child(svg(`mods/kanso-chrome/icons/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none());
 }
 
-// One agent under its space: icon, title, machine (remote), state. Zen: the
-// focused one carries full ink and a faint wash, the rest stay muted; clicking
-// goes to its pane.
-// `drag` (optional): { pinned, target, down, up } to reorder panes from here.
-// A double-click on the row renames the terminal (renameTerminal).
-export function agentRow(a, indent, t, drag) {
+// One session under its space: icon, name, machine (remote), pin, state.
+// Zen: the focused one carries full ink and a faint wash, the rest stay
+// muted; clicking goes to its pane; a double-click renames it.
+// `row`: { drag: { target, down, up } | null (the row can be dragged to
+// reorder its section), hovered, hover(h, cx), pin(cx) (toggles the pin) }.
+// Each event has one handler: a second one would replace the first.
+export function agentRow(a, indent, t, row) {
   const pic = agentIcon(a.program, 15, t.foreground);
   const idle = (a.status === "idle" || a.status === "done" || !a.status) && !a.focused;
   const machine = a.address.includes("/") ? a.address.split("/")[0] : null;
+  const pinned = a.pin != null, drag = row?.drag;
   return h_flex().id(`space-agent-${a.address}`).h(AGENT_ROW).flex_none().pl(AGENT_PAD + indent).pr(8).gap(8)
     .items_center().rounded(6).text_size(12.5).cursor_pointer()
     .when(a.focused, (el) => el.bg(t.foreground + "0c"))
     .hover((s) => s.bg(t.foreground + "0c"))
     .on_click(() => run("pane.focus", { pane: a.pane }))
-    // One press handler: a second one would replace it. A double-click
-    // renames; a press starts a drag (when the row can be dragged).
     .on_mouse_down("left", (e) => { if (e.click_count === 2) renameTerminal(a.address, agentLabel(a)); else drag?.down(); })
-    // Dropping: a line on the side the pane will land on.
+    .when(Boolean(drag), (el) => el.on_mouse_up("left", (_e, cx) => drag.up(cx)))
+    .when(Boolean(row), (el) => el.on_hover((h, cx) => row.hover(h, cx)))
+    // Dropping: a line on the side the session will land on.
     .when(drag?.target === "before", (el) => el.border_t(2).border_color(t.accent))
     .when(drag?.target === "after", (el) => el.border_b(2).border_color(t.accent))
-    .when(Boolean(drag), (el) => el.on_mouse_up("left", (_e, cx) => drag.up(cx)).on_hover((h, cx) => drag.hover(h, cx)))
     .when(Boolean(pic), (el) => el.child(pic.opacity(a.focused ? 1 : 0.8)))
     .child(div().flex_1().min_w(0).truncate()
       .text_color(a.focused ? t.foreground : idle ? t.dim : t.muted)
       .when(a.focused, (el) => el.font_medium())
       .child(agentLabel(a)))
-    .when(Boolean(drag?.pinned), (el) => el.child(svg("mods/kanso-chrome/icons/pin.svg").size(11).flex_none().text_color(t.dim)))
     .when(Boolean(machine), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(machine)))
+    // The pin: always shown on a pinned session, on hover on the rest; a
+    // click pins or unpins (the row's own click stays a focus).
+    .when(Boolean(row) && (pinned || row.hovered), (el) => el.child(div().id(`pin-${a.address}`).size(18).flex_none().rounded(6)
+      .flex().items_center().justify_center().text_color(pinned ? t.foreground : t.dim).tooltip(pinned ? "Unpin" : "Pin to the top")
+      .hover((s) => s.bg(t.input).text_color(t.foreground))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); row.pin(cx); })
+      .child(svg("mods/kanso-chrome/icons/pin.svg").size(11))))
     .child(statusMark(t, a.status, true));
 }

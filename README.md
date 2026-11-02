@@ -25,7 +25,9 @@ for their names). You choose how many panes the view holds at once, 1 to 8.
 | Wheel over a header or the minimap | Slide the view |
 | Cmd+Shift+O | Open the pane's folder in a code editor |
 | Cmd+Alt+P | Pin the pane (or unpin it): it keeps its place and stays in view |
-| Drag a session in the sidebar | Move its pane in the strip |
+| The order button at the top of the sidebar | List each space's sessions by last update, needs you first, by kind, as on screen, or in your own order |
+| The pin on a session (hover) | Keep it at the top of its space; drag the pinned ones to order them |
+| Drag a session (your own order) | Put it where you want in its space |
 | Right-click a file in the Files panel | Open it with an editor, or preview it in the panel (Markdown rendered) |
 | Double-click a session in the sidebar, a pane's header, a space or a tab | Rename it (the same dialog for all; an empty name brings the automatic one back) |
 
