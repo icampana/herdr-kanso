@@ -4,7 +4,7 @@
 // Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-tabs; tabs and panel buttons without outlines; side panels mounted on demand (only the open one exists); Specs and Insights offered only when installed; trackpad scrolling moves one tab per swipe.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, agents, terminals, run, openOverlay, theme, window, shared, layout, readTextFile, appHome } from "herdr";
+import { spaces, panes, agents, terminals, run, openOverlay, theme, window, shared, setShared, layout, readTextFile, appHome } from "herdr";
 
 // The Specs button's extra (added by José Gutiérrez, minimalistic): this space's pending count, published by
 // sdd-focused as "sdd.badge" {space, n, pending: [paths]}, and a red dot when an
@@ -170,6 +170,8 @@ export default class Tabs extends View {
     const specsExtra = now === "specs" ? specsBadge(space, t) : null;
     // No background and no line of its own: it sits on the frame.
     return h_flex().size_full().min_w(0).px(12).gap(2).items_center()
+      // A pane held in the strip and let go here goes back where it was.
+      .on_mouse_up("left", () => { if (shared("strip.drag")) { setShared("strip.drop", null); setShared("strip.drag", null); } })
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => this.wheel(e))
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(6).overflow_x_scrollbar()

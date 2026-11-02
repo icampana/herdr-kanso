@@ -9,7 +9,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agentRow, agentFold, withTerminals } from "./agents.js";
+import { agentRow, agentFold, withTerminals, givenNames } from "./agents.js";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
@@ -269,6 +269,25 @@ export default class Spaces extends View {
     return list.map((a, i) => [a, i]).sort((x, y) => (x[0].tab_index - y[0].tab_index) || (pos(x[0]) - pos(y[0])) || (x[1] - y[1])).map(([a]) => a);
   }
 
+  // The rows of a space, with the panes that share a strip column (stacked
+  // one over another) held together in one soft slab, so the sidebar shows
+  // what is linked on screen.
+  stacked(mine, indent, t) {
+    const state = shared("strip.state") ?? {};
+    const colOf = (a) => { const c = (state[a.tab]?.cols ?? []).find((k) => k.panes?.includes(a.pane)); return c && c.panes.length > 1 ? `${a.tab}:${c.panes[0]}` : null; };
+    const out = [];
+    for (let i = 0; i < mine.length;) {
+      const key = colOf(mine[i]);
+      let j = i + 1;
+      while (key && j < mine.length && colOf(mine[j]) === key) j++;
+      const rows = mine.slice(i, j).map((a) => agentRow(a, indent, t, this.reorder(a, mine)));
+      if (key && rows.length > 1) out.push(v_flex().id(`stack-${key}`).flex_none().rounded(6).bg(t.foreground + "08").children(rows));
+      else out.push(...rows);
+      i = j;
+    }
+    return out;
+  }
+
   // Drag a session onto another in the same tab (the one on screen) to move
   // its pane there in the strip. Pinned panes stay where they are.
   reorder(a, mine) {
@@ -292,14 +311,17 @@ export default class Spaces extends View {
   }
 
   // The rows, under a header per machine once one isn't this computer.
+  // A session's name is the terminal's `kanso.name` label when it has one
+  // (a double-click on the row opens the rename dialog).
   grouped(t, collapsed) {
     const rows = this.ordered();
-    const all = withTerminals(agents(), panes(), spaces());
+    const given = givenNames();
+    const all = withTerminals(agents(), panes(), spaces()).map((a) => given.has(a.address) ? { ...a, name: given.get(a.address) } : a);
     const draw = (r) => {
       if (collapsed) return this.compact(r, t);
       const mine = this.inStripOrder(all.filter((a) => a.space === r.w.id));
       const open = !this.agentsFolded.has(r.w.id);
-      return [this.row(r, t, mine), ...(open ? mine.map((a) => agentRow(a, r.tree ? CHILD_PAD : 0, t, this.reorder(a, mine))) : [])];
+      return [this.row(r, t, mine), ...(open ? this.stacked(mine, r.tree ? CHILD_PAD : 0, t) : [])];
     };
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name)])].sort();
     const loading = m => {
@@ -405,9 +427,11 @@ export default class Spaces extends View {
       .when(on, (el) => el.bg(wash))
       .when(!on, (el) => el.hover((s) => s.bg(washHover)))
       .when(this.pressed !== null && this.over === i && this.pressed !== i, (el) => el.border_t(2).border_color(t.accent))
-      .on_mouse_down("left", () => {
+      .on_mouse_down("left", (e) => {
         this.pressed = i;
         this.over = i;
+        // A double-click renames the space (Herdr's own prompt).
+        if (e.click_count === 2) { this.pressed = null; run("space.rename", { id: w.id }); }
       })
       .on_mouse_up("left", (_e, cx) => {
         const from = this.pressed;
@@ -509,6 +533,8 @@ export default class Spaces extends View {
         .child(hide);
     return v_flex().id("spaces-root").size_full().min_h(0).bg(t.chrome).text_size(13)
       .on_size_change((size) => { this.width = size.width; })
+      // A pane held in the strip and let go here goes back where it was.
+      .on_mouse_up("left", () => { if (shared("strip.drag")) { setShared("strip.drop", null); setShared("strip.drag", null); } })
       .child(add)
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(collapsed ? 6 : 0).pb(14).overflow_y_scrollbar().mode(collapsed ? "hover" : "always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; this.draggedAgent = null; cx.notify(); })

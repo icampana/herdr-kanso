@@ -21,11 +21,12 @@ for their names). You choose how many panes the view holds at once, 1 to 8.
 | Cmd+Shift+0 | Even the panes out |
 | Cmd+Shift+Enter | Make the pane wider or narrower |
 | Drag the gutter between two panes | Resize them, sideways or up and down |
-| Drag the six-dot grip onto another pane | Left or right quarter: a column before or after it. Middle: stack it under that pane |
+| Hold the six-dot grip and drag onto another pane | Every pane becomes a card while you hold; the half where yours will land lights up with its name. Left or right quarter: a column before or after. Middle: stacked above or below |
 | Wheel over a header or the minimap | Slide the view |
 | Cmd+Shift+O | Open the pane's folder in a code editor |
 | Cmd+Alt+P | Pin the pane (or unpin it): it keeps its place and stays in view |
 | Drag a session in the sidebar | Move its pane in the strip |
+| Double-click a session in the sidebar, a pane's header, a space or a tab | Rename it (the same dialog for all; an empty name brings the automatic one back) |
 
 ![Kanso](kanso/preview.png)
 

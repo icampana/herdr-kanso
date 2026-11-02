@@ -220,11 +220,22 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   - Click a space to select it. Clicking the space you are in folds or
     unfolds its agents; the folded state is kept.
   - Drag a space to reorder it (a 2px `accent` line shows where it lands).
+    Double-click a space to rename it (Herdr's `space.rename` prompt).
+  - Double-click a session row to rename the terminal: the same dialog
+    Herdr opens for a space or a tab (`kanso-prompt`, 420 wide, with the
+    name it shows now selected; Enter saves, Esc leaves it). The name is
+    the terminal's own `kanso.name` label in herdr-core (`hc label <t>
+    kanso.name=<name>`; empty removes it and the automatic name is back),
+    so it survives a restart and the pane header, the edge tabs and the
+    drop cards show the same name. Herdr has no terminal rename of its
+    own; labels are its metadata.
     Right-click opens the shipped space menu.
   - Click an agent row to focus its pane. Sessions are listed in the order
     the strip shows their panes, tab by tab; drag one onto another in the
     tab on screen to move its pane there (a 2px `accent` line shows where).
-    A pinned pane shows a pin and doesn't move.
+    A pinned pane shows a pin and doesn't move. Panes stacked in one
+    column on screen are held together in one soft slab (`foreground` at
+    3%, radius 6), so the sidebar shows what is linked.
   - Every terminal in the space is listed, not only the agents that report
     a status to Herdr: after those come the rest (Codex and other models'
     CLIs, shells, servers) with their program's icon, their title (a shell's
@@ -261,14 +272,28 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     moving the focus; if the focused pane leaves the view, the keyboard
     moves to the nearest pane still in view. Cmd+Alt+, and Cmd+Alt+. slide
     one column. Clicking an edge tab or a minimap mark slides to that pane.
-  - Drag a header's six-dot grip (or Ctrl+drag the header) onto another
-    header to move the pane: the left quarter of the target means a column
-    of its own before it, the right quarter one after it, and the middle
-    half stacks it under that pane, in its column. A 3px `foreground` bar
-    on the edge, or an `accent` wash at 25% over the whole header, shows
-    where it will land, and the dragged header dims. Any number of panes can
-    stack; the 90px minimum height is the only limit. Dropping on an edge
-    tab puts the pane just beyond that edge.
+  - Hold a header's six-dot grip (or Ctrl+drag the header) and drag onto
+    another pane to move the pane. While a pane is held the strip is
+    sorting: every pane's terminal gives its place to a drop card (a
+    `kanso-strip` copy with `{drop: pane}`; the terminal lives on, the tree
+    just stops showing it), so the whole pane takes the drop, not only its
+    34px header. The card shows the pane's icon and name in `muted`,
+    centered; the held pane's own card and header are at 40%. Over a card
+    the pointer names a side: the left and right quarters mean a column of
+    its own before or after that pane, the middle stacks it above (upper
+    half) or below (lower half); the header counts as the pane's top (its
+    middle means above) and the foot as its bottom (below). That side is
+    shared `strip.drop` `{to, side}`, and header, card and foot draw from
+    it: the half the held pane will take fills with `accent` at 25% and
+    carries the held pane's icon and name in full ink, the resident's name
+    steps to the other half, and the header's matching half (or all of it,
+    for above) is washed the same. Any number of panes can stack; the 90px
+    minimum height is the only limit. The edge tabs light in the accent too
+    (brighter under the pointer): dropping there puts the pane just beyond
+    that edge. Letting go on the held pane itself, the sidebar, the tab bar
+    or the minimap moves nothing; a pane let go on a gutter stays held
+    until the next press, or 12 s, then goes back. When the hold ends the
+    terminals return and the keyboard goes back to the strip's focused pane.
 - **Side panels, on demand**:
   - Clicking a panel button rewrites the panel stack to hold only that
     panel's block and shows it. Clicking it again, or closing the panel any
@@ -318,8 +343,16 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     `n` is in shared `strip.n` for new tabs. Copies with `{ruler}` are the
     1px rulers; what they measure is in shared `strip.px`.
     Headers talk to it through shared `strip.req` (scroll, move, width, pin),
-    `strip.intent` (where the next new pane goes) and `strip.drag`.
-  - `kanso-pane`: pane header.
+    `strip.intent` (where the next new pane goes), `strip.drag` (the held
+    pane) and `strip.drop` (where it would land). Copies with `{drop}` are
+    the cards that stand in for terminals while a pane is held.
+  - `kanso-pane`: pane header. Double-click it to rename the terminal (the
+    same dialog and `kanso.name` label as the sidebar).
+  - `kanso-prompt`: Herdr's prompt dialog, copied, for what Herdr has no
+    command for. Props `{title, value, hint}` and either `command: {name,
+    args}` (runs it with `name`, as Herdr's prompt) or `label: {terminal,
+    key}` (`hc label <terminal> <key>=<text>`; empty removes the label).
+    Opened as a dialog 420 wide.
   - `kanso-menu`: the terminal right-click menu (root `terminal_menu`):
     split right, left and down through the strip, width, right-clicks
     to the program, send back, "Open with…" (when the pane has a folder),
@@ -368,11 +401,13 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
   terminal ended go. Never rely on an empty column for space (use a filler
   block) or on a single-child wrapper's id. The side panel's toggle lives on
   `panel-body` itself for that reason.
-- Herdr won't let a mod handle the mouse over terminal text, so reordering
-  is Ctrl+drag on the pane headers, not on the terminal, and a grip drag only
-  tracks while the pointer stays on the header row (a terminal below the
-  headers swallows it). Resizing isn't a mod's drag at all: it is Herdr's
-  divider, read back afterwards.
+- Herdr won't let a mod handle the mouse over terminal text, so a hold on a
+  grip takes the terminals out of the tree for its duration and puts drop
+  cards in their place: that is how the whole pane, not only its header,
+  can show where the held pane lands and take the drop. Nothing tells a mod
+  about a release over a gutter (no `on_mouse_up_out`), hence the
+  next-press and 12 s ends. Resizing isn't a mod's drag at all: it is
+  Herdr's divider, read back afterwards.
 - A host argument nests at most 16 levels, and the layout tree counts each
   node and its `children` array: there is no room for a wrapper around the
   strip's columns in `work-body`, which is why the rulers sit inside the
