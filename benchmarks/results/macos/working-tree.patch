@@ -1,0 +1,658 @@
+diff --git a/kanso/RECIPE.md b/kanso/RECIPE.md
+index 17d9210..40497e2 100644
+--- a/kanso/RECIPE.md
++++ b/kanso/RECIPE.md
+@@ -134,12 +134,18 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
+       told `files`, `changes` or `pr` (`props.panel`), `token-spend`
+       (Insights) or `sdd-focused`.
+       The PR panel (`kanso-panel` with `pr`) shows the open pull request of the focused
+-      pane's branch, as T3 Code does, drawn like the Spend panel: one
++      pane's branch, as T3 Code does, or another of your open ones, drawn like the Spend panel: one
+       centered column (max 1080, 16 px sides under 560 wide, else 32), no
+       cards or uppercase labels, `canvas` behind, hierarchy from size, weight
+       and tone, hairlines between list rows. Top to bottom:
+       - Header: "Pull request" (17, 20 when wide) and two 26 icon buttons,
+         refresh (spins while reading) and open on GitHub.
++      - Your open pull requests (`gh pr list --author @me`, open, in this
++        repository, newest first), unless the only one is the one shown:
++        the title (13, medium when shown) over `#n · branch`, "this branch"
++        and "draft" (11, dim), and at the right its age or "shown"; 5 shown,
++        "Show N more". A click shows that one; the branch's own goes back
++        to following the branch. Without one shown, the list sits below.
+       - Hero: `#n · head → base` (15, muted); the title (22, 28 wide, light,
+         line height 1.25); a 6 dot and the verdict (15): ready to merge
+         (green), checks failing, conflicts or changes requested (red),
+@@ -469,6 +475,12 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
+   reads as the old one. The strip, the tabs, the panel and the sidebar keep
+   their piece in shared `kanso.layout` (`nodes`, `panel`, `rail`) and put all
+   three back on every write, so one writer cannot drop another's.
++  The strip also records `sizesBefore`: other writers preserve new native
++  divider sizes while its adopt timer catches up, but replay pending strip
++  width commands over the old sizes they were based on.
++- On Unix, Files uses Bash to consume `find -print0` without splitting names
++  at newlines. It reads 501 entries and displays 500, keeping the extra entry
++  only to detect truncation. Bash must be available on remote Unix hosts too.
+ 
+ - Never use `.spin()` for a busy state. It redraws the whole window about
+   30 times a second while any agent works, and every redraw repaints every
+diff --git a/kanso/mods/kanso-panel/changes.js b/kanso/mods/kanso-panel/changes.js
+index bbcd0ed..d4a28a3 100644
+--- a/kanso/mods/kanso-panel/changes.js
++++ b/kanso/mods/kanso-panel/changes.js
+@@ -85,7 +85,7 @@ export class Changes {
+           const conflict = xy.includes("U") || xy === "AA" || xy === "DD";
+           const s = conflict ? "U" : xy.includes("D") ? "D" : fresh || xy.includes("A") ? "A" : "M";
+           const stat = stats[path] ?? { add: 0, del: 0 };
+-          files.push({ path, status: s, fresh, ...stat });
++          files.push({ path, status: s, fresh, stagedDeletion: xy === "D ", ...stat });
+         }
+         if (key() !== context) return;
+         this.root = root; this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;
+@@ -144,15 +144,20 @@ export class Changes {
+   commit(cx) {
+     if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== key()) return;
+     const root = this.root, on = this.on, context = this.context, message = this.message.trim();
+-    const paths = this.files.map((f) => f.path).filter(insideRoot);
++    const files = this.files.filter((f) => insideRoot(f.path));
++    const paths = files.filter((f) => !f.stagedDeletion).map((f) => f.path);
+     const limited = this.limited;
+-    if (!paths.length) { this.note = "Nothing to commit"; return; }
++    if (!files.length) { this.note = "Nothing to commit"; return; }
+     this.busy = true; this.note = null;
+     cx.spawn(async (cx) => {
+       try {
+         // Only the files listed here. `git add -A` would also stage everything
+         // else in the worktree, including secrets that were never shown.
+-        for (const args of [["add", "-A", "--", ...paths], ["commit", "-m", message]]) {
++        // A staged deletion is already absent from both disk and the index;
++        // adding it by path would fail. It still belongs in the commit.
++        const commands = paths.length ? [["--literal-pathspecs", "add", "-A", "--", ...paths]] : [];
++        commands.push(["commit", "-m", message]);
++        for (const args of commands) {
+           const r = await exec("git", args, { cwd: root, on });
+           if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+         }
+diff --git a/kanso/mods/kanso-panel/files.js b/kanso/mods/kanso-panel/files.js
+index 52e1df7..cb4bc95 100644
+--- a/kanso/mods/kanso-panel/files.js
++++ b/kanso/mods/kanso-panel/files.js
+@@ -20,20 +20,40 @@ async function directory(path, on) {
+     const result = JSON.parse(r.stdout || "[]");
+     return Array.isArray(result) ? result : [result];
+   }
+-  // find streams the names. A glob of "$1"/* expands the whole directory
+-  // before the loop can stop at 500, and a large folder exceeds ARG_MAX.
++  // One process and no shell: find prints each directory twice in a row (a
++  // name can't appear twice in a folder), so the type costs no extra call.
++  // Entries are not followed (-type d is false for a link to a folder); -H
++  // follows only the folder itself, as a link to it should open.
++  const fast = await exec("find", ["-H", ".", "-mindepth", "1", "-maxdepth", "1", "!", "-name", ".git",
++    "(", "-type", "d", "-print0", "-print0", "-o", "-print0", ")"], { cwd: path, on }).catch(() => null);
++  if (fast?.code === 0) {
++    const out = [], text = fast.stdout;
++    for (let at = 0, last = null; at < text.length && out.length <= PER_FOLDER + 1;) {
++      const end = text.indexOf("\0", at);
++      if (end < 0) break;
++      const name = text.slice(at + 2, end); // drop "./"
++      at = end + 1;
++      if (name === last) { out[out.length - 1].dir = true; last = null; continue; }
++      out.push({ name, dir: false }); last = name;
++    }
++    // One past the cap tells the panel the folder was cut short.
++    return out.slice(0, PER_FOLDER + 1);
++  }
++  // Fallback (no find on that machine, or a folder so large the output went
++  // past exec's limit): stream NUL-separated names. Bash's read -d keeps the
++  // stream bounded; read one extra entry to detect truncation.
+   const script = `
+ n=0
+-find "$1" -mindepth 1 -maxdepth 1 ! -name .git -print 2>/dev/null |
+-while IFS= read -r p; do
++find -H "$1" -mindepth 1 -maxdepth 1 ! -name .git -print0 2>/dev/null |
++while IFS= read -r -d '' p; do
+   name=\${p##*/}
+   if [ -d "$p" ] && [ ! -L "$p" ]; then kind=d; else kind=f; fi
+   printf '%s\\0%s\\0' "$kind" "$name"
+   n=$((n+1))
+-  [ "$n" -ge 500 ] && break
++  [ "$n" -ge ${PER_FOLDER + 1} ] && break
+ done
+ test -d "$1"`;
+-  const r = await exec("sh", ["-c", script, "files", path], { on });
++  const r = await exec("bash", ["-c", script, "files", path], { on });
+   if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
+   const fields = r.stdout.split("\0"), out = [];
+   for (let i = 0; i + 1 < fields.length; i += 2) out.push({ name: fields[i + 1], dir: fields[i] === "d" });
+@@ -171,8 +191,6 @@ export class Files {
+   row({ path, entry, depth, mark }, t) {
+     const open = this.folders.has(path);
+     return h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(6).cursor_pointer().hover(s => s.bg(t.hover))
+-      .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.show(path, cx))
+-      .when(!entry.dir, (el) => el.on_mouse_down("right", () => this.openWith(path)))
+       .child(entry.dir ? svg(`mods/kanso-panel/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
+       .child(svg(`mods/kanso-panel/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
+       .child(div().flex_1().min_w(0).truncate().child(entry.name))
+@@ -193,7 +211,17 @@ export class Files {
+           .child(svg("mods/kanso-chrome/icons/open-with.svg").size(14)))))
+       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).p(6)
+         .when(items.length > 0, (el) => el.child(div().flex_1().min_h(0).relative()
+-          .child(v_virtual_list("files-rows", items.length, 28, (i) => items[i].path, (range) => items.slice(range.start, range.end).map((item) => this.row(item, t))).size_full())
++          .child(v_virtual_list("files-rows", items.length, 28, (i) => items[i].path, (range) => items.slice(range.start, range.end).map((item) => this.row(item, t)))
++            // Item renderers run during native layout, where per-row handlers
++            // are forbidden. The list owns two handlers, keyed by file path.
++            .on_item_click((path, cx) => {
++              const item = items.find((item) => item.path === path);
++              if (item) item.entry.dir ? this.toggle(path, cx) : this.show(path, cx);
++            })
++            .on_item_secondary_click((path) => {
++              const item = items.find((item) => item.path === path);
++              if (item && !item.entry.dir) this.openWith(path);
++            }).size_full())
+           .child(Scrollbar.vertical("files-rows").absolute().inset_0())))
+         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
+         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
+diff --git a/kanso/mods/kanso-panel/lib.js b/kanso/mods/kanso-panel/lib.js
+index 47676a4..6ce075a 100644
+--- a/kanso/mods/kanso-panel/lib.js
++++ b/kanso/mods/kanso-panel/lib.js
+@@ -5,6 +5,9 @@ import { spaces, panes, focused, layout, run, theme, settings, shared, setShared
+ 
+ // Same helper as kanso-strip, kanso-tabs, kanso-spaces and open-with.
+ const LAYOUT_INTENT = "kanso.layout";
++// The strip writes its columns under their own key, many times a second, so
++// it never has to read back and copy the panel and rail to keep them.
++const STRIP_INTENT = "kanso.layout.strip";
+ 
+ function walkLayout(node, id) {
+   if (node?.id === id) return node;
+@@ -15,9 +18,9 @@ function walkLayout(node, id) {
+   return null;
+ }
+ 
+-function paintLayout(tree) {
+-  const intent = shared(LAYOUT_INTENT);
+-  if (!intent || !tree) return;
++function paintLayout(tree, preserveSizes = true) {
++  if (!tree) return;
++  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+   if (intent.nodes) {
+     const body = walkLayout(tree, "work-body");
+     if (body?.children) {
+@@ -25,7 +28,18 @@ function paintLayout(tree) {
+       const at = body.children.findIndex(mine);
+       const rest = body.children.filter((n) => !mine(n));
+       const i = Math.max(0, at);
+-      body.children = [...rest.slice(0, i), ...JSON.parse(JSON.stringify(intent.nodes)), ...rest.slice(i)];
++      const nodes = JSON.parse(JSON.stringify(intent.nodes));
++      // Native dividers leave px sizes before the strip's adopt timer runs.
++      // Keep those edits, but not sizes from the tree a pending strip write
++      // was based on: replaying those would undo an explicit width command.
++      const keepSize = (node) => {
++        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
++        if (before !== undefined && live?.size?.px !== undefined
++          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
++        for (const child of node.children ?? []) keepSize(child);
++      };
++      if (preserveSizes) nodes.forEach(keepSize);
++      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+     }
+   }
+   if ("panel" in intent) {
+diff --git a/kanso/mods/kanso-panel/main.js b/kanso/mods/kanso-panel/main.js
+index d0ee4df..b0be75c 100644
+--- a/kanso/mods/kanso-panel/main.js
++++ b/kanso/mods/kanso-panel/main.js
+@@ -2,7 +2,7 @@
+ //
+ // One mod, four panels: `props.panel` is "files" (a lazy file browser),
+ // "changes" (git status, diffs and a commit), "pr" (the branch's pull
+-// request) or "preview" (one file, rendered: Markdown as the SDK draws it,
++// request, or another of your open ones picked from a list) or "preview" (one file, rendered: Markdown as the SDK draws it,
+ // anything else as read-only code; `props.path`, `props.on`). kanso-tabs mounts one of them in the panel stack on demand and
+ // empties the stack to close it, so a panel exists only while it is shown
+ // and never has to watch whether it is. Each panel is a plain class with
+diff --git a/kanso/mods/kanso-panel/pr.js b/kanso/mods/kanso-panel/pr.js
+index 6307ed6..0b71f05 100644
+--- a/kanso/mods/kanso-panel/pr.js
++++ b/kanso/mods/kanso-panel/pr.js
+@@ -1,6 +1,7 @@
+ // Kanso's pull request panel, by jlopezlira (https://github.com/jlopezlira/herdr-kanso). Apache-2.0.
+ //
+-// The open pull request of the focused pane's branch, read with the GitHub CLI
++// The open pull request of the focused pane's branch, or any of your open ones
++// in that repository (listed above it, a click shows one), read with the GitHub CLI
+ // (`gh`), in the spirit of T3 Code's pull request view and drawn the way the
+ // Spend panel is: one centered column, no cards or uppercase labels, hierarchy
+ // from type size, weight and tone, hairlines between rows, a breathing
+@@ -27,6 +28,9 @@ const THREADS = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$
+ // which, unlike `collaborators`, does not need push access to read.
+ const PEOPLE = "query($o:String!,$r:String!){viewer{login} repository(owner:$o,name:$r){assignableUsers(first:100){pageInfo{hasNextPage} nodes{login name}}}}";
+ const LABELS = "query($o:String!,$r:String!){repository(owner:$o,name:$r){labels(first:100,orderBy:{field:NAME,direction:ASC}){pageInfo{hasNextPage} nodes{name color description}}}}";
++// Yours, open, in this repository: the list a click picks from.
++const MINE = "number,title,headRefName,isDraft,updatedAt";
++const MINE_ROWS = 5;
+ const MAX_DIFF = 400;
+ const FILE_ROWS = 8;
+ 
+@@ -99,7 +103,8 @@ function quietLink(id, label, onClick, c, options = {}) {
+ export class PullRequest {
+   init(cx) {
+     this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
+-    this.expanded = { checks: false, files: false }; this.width = 368;
++    this.expanded = { checks: false, files: false, mine: false }; this.width = 368;
++    this.mine = []; this.selected = null; // null: the branch's own pull request
+     this.picker = null; this.candidates = null; this.query = "";
+     this.search = InputState.new({ placeholder: "Search" });
+     this.search.on("change", (_e, cx) => { this.query = this.search.value(); cx.notify(); });
+@@ -126,9 +131,11 @@ export class PullRequest {
+     if (context !== this.context) {
+       this.context = context; this.root = null; this.branch = null; this.pr = null; this.threads = []; this.diffs = null;
+       this.openFile = null; this.error = null; this.note = null; this.none = false; this.armed = null; this.picker = null;
++      this.mine = []; this.selected = null;
+     }
+     if (!cwd) return;
+     this.loading = true;
++    const want = this.selected;
+     cx.spawn(async (cx) => {
+       try {
+         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+@@ -137,10 +144,18 @@ export class PullRequest {
+         this.root = top.stdout.trim(); this.on = on;
+         const branch = await exec("git", ["branch", "--show-current"], { cwd: this.root, on });
+         this.branch = branch.stdout.trim() || null;
+-        let view;
+-        try { view = await this.gh(["pr", "view", "--json", FIELDS]); }
+-        catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
+-        if (key() !== context) return;
++        let view, mine;
++        try {
++          [view, mine] = await Promise.all([
++            this.gh(["pr", "view", ...(want ? [String(want)] : []), "--json", FIELDS]),
++            this.gh(["pr", "list", "--author", "@me", "--state", "open", "--limit", "50", "--json", MINE]).catch(() => null),
++          ]);
++        } catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
++        // A click picked another one while this read was out: drop it, the finally reads again.
++        if (key() !== context || this.selected !== want) return;
++        if (mine?.code === 0) {
++          try { this.mine = JSON.parse(mine.stdout).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); } catch {}
++        }
+         if (view.code !== 0) {
+           const why = (view.stderr || view.stdout).trim();
+           if (/no (open )?pull requests? found|could not determine current branch/i.test(why)) { this.none = true; this.pr = null; this.error = null; }
+@@ -166,10 +181,22 @@ export class PullRequest {
+           if (me?.code === 0) this.viewer = me.stdout.trim();
+         }
+       } catch (e) { if (key() === context) this.error = { title: "GitHub could not be read.", detail: String(e?.message ?? e) }; }
+-      finally { this.loading = false; this.loadedAt = Date.now(); cx.notify(); }
++      finally {
++        this.loading = false; this.loadedAt = Date.now(); cx.notify();
++        if (this.selected !== want && key() === context) this.refresh(cx);
++      }
+     });
+   }
+ 
++  // Shows another of your pull requests; the branch's own goes back to following the branch.
++  choose(p, cx) {
++    const next = p.headRefName === this.branch ? null : p.number;
++    if (this.pr?.number === p.number && this.selected === next) return;
++    this.selected = next; this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
++    this.none = false; this.error = null; this.note = null; this.armed = null; this.picker = null;
++    this.loadedAt = 0; this.refresh(cx); cx.notify();
++  }
++
+   // ---- actions ----
+ 
+   act(label, args, cx) {
+@@ -338,6 +365,28 @@ export class PullRequest {
+ 
+   // ---- drawing, as Spend draws ----
+ 
++  // Your open pull requests in this repository, newest first, the shown one in weight.
++  // Hidden when the only one is the one already shown.
++  yours(c) {
++    const list = this.mine ?? [], shown = this.pr?.number;
++    if (!list.length || (list.length === 1 && list[0].number === shown)) return null;
++    const open = this.expanded.mine, rows = open ? list : list.slice(0, MINE_ROWS);
++    return v_flex().w_full()
++      .child(this.section(c, "Your open pull requests", String(list.length)))
++      .children(rows.map((p, i) => Button.new(`pr-mine-${p.number}`).w_full().py(7).cursor_pointer()
++        .when(i > 0, (el) => el.border_t(1).border_color(c.border))
++        .hover((s) => s.opacity(0.75))
++        .accessibility_label(`#${p.number} ${p.title}`)
++        .on_click((_e, cx) => this.choose(p, cx))
++        .child(h_flex().w_full().items_end().gap(G.md)
++          .child(v_flex().flex_1().min_w(0).gap(2)
++            .child(div().truncate().text_size(13).text_color(c.text).when(p.number === shown, (e) => e.font_medium()).child(p.title))
++            .child(div().truncate().text_size(11).text_color(c.dim)
++              .child([`#${p.number}`, p.headRefName, p.headRefName === this.branch && "this branch", p.isDraft && "draft"].filter(Boolean).join(" · "))))
++          .child(div().flex_none().text_size(11).text_color(p.number === shown ? c.text : c.dim).child(p.number === shown ? "shown" : ago(p.updatedAt))))))
++      .when(list.length > MINE_ROWS, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-mine-more", open ? "Show fewer" : `Show ${list.length - MINE_ROWS} more`, (cx) => { this.expanded.mine = !open; cx.notify(); }, c))));
++  }
++
+   iconButton(id, icon, tip, onClick, c, spin) {
+     const glyph = svg(`${ICON}${icon}.svg`).size(15).text_color(spin ? c.text : c.muted);
+     return Button.new(id).size(26).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
+@@ -580,8 +629,10 @@ export class PullRequest {
+     const c = tokens(theme());
+     const narrow = (this.width || 368) < 560;
+     let body;
++    const yours = this.yours(c);
+     if (this.pr) {
+       body = v_flex().w_full().gap(narrow ? 36 : 48)
++        .when(Boolean(yours), (el) => el.child(yours))
+         .child(this.hero(c, narrow))
+         .child(this.people(c))
+         .when(this.checks().length > 0, (el) => el.child(this.checksList(c)))
+@@ -594,6 +645,8 @@ export class PullRequest {
+       this.note ?? "Push the branch, then open one on GitHub.",
+       quietLink("pr-create", this.busy === "Create" ? "Opening GitHub…" : "Create it on GitHub", (cx) => this.createPr(cx), c, { size: 13, color: c.text, disabled: Boolean(this.busy) }));
+     else body = this.loading || !this.context ? this.skeleton(c, narrow) : this.waiting(c, "No folder", "Focus a pane inside a repository.");
++    // Without one shown (none on this branch, an error, still reading), the list stays below.
++    if (!this.pr && yours) body = v_flex().w_full().gap(narrow ? 36 : 48).child(body).child(yours);
+ 
+     return v_flex().id("kanso-pr").size_full().min_h(0).bg(c.canvas).text_color(c.text).overflow_y_scrollbar()
+       .on_size_change((size, sizeCx) => { if (Math.abs((this.width || 0) - size.width) >= 1) { this.width = size.width; sizeCx.notify(); } })
+diff --git a/kanso/mods/kanso-spaces/main.js b/kanso/mods/kanso-spaces/main.js
+index abb7dd3..d8023b9 100644
+--- a/kanso/mods/kanso-spaces/main.js
++++ b/kanso/mods/kanso-spaces/main.js
+@@ -14,6 +14,9 @@ import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, sha
+ 
+ // Same helper as kanso-strip, kanso-tabs, kanso-panel and open-with.
+ const LAYOUT_INTENT = "kanso.layout";
++// The strip writes its columns under their own key, many times a second, so
++// it never has to read back and copy the panel and rail to keep them.
++const STRIP_INTENT = "kanso.layout.strip";
+ 
+ function walkLayout(node, id) {
+   if (node?.id === id) return node;
+@@ -24,9 +27,9 @@ function walkLayout(node, id) {
+   return null;
+ }
+ 
+-function paintLayout(tree) {
+-  const intent = shared(LAYOUT_INTENT);
+-  if (!intent || !tree) return;
++function paintLayout(tree, preserveSizes = true) {
++  if (!tree) return;
++  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+   if (intent.nodes) {
+     const body = walkLayout(tree, "work-body");
+     if (body?.children) {
+@@ -34,7 +37,18 @@ function paintLayout(tree) {
+       const at = body.children.findIndex(mine);
+       const rest = body.children.filter((n) => !mine(n));
+       const i = Math.max(0, at);
+-      body.children = [...rest.slice(0, i), ...JSON.parse(JSON.stringify(intent.nodes)), ...rest.slice(i)];
++      const nodes = JSON.parse(JSON.stringify(intent.nodes));
++      // Native dividers leave px sizes before the strip's adopt timer runs.
++      // Keep those edits, but not sizes from the tree a pending strip write
++      // was based on: replaying those would undo an explicit width command.
++      const keepSize = (node) => {
++        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
++        if (before !== undefined && live?.size?.px !== undefined
++          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
++        for (const child of node.children ?? []) keepSize(child);
++      };
++      if (preserveSizes) nodes.forEach(keepSize);
++      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+     }
+   }
+   if ("panel" in intent) {
+diff --git a/kanso/mods/kanso-strip/main.js b/kanso/mods/kanso-strip/main.js
+index 2476146..b9af50a 100644
+--- a/kanso/mods/kanso-strip/main.js
++++ b/kanso/mods/kanso-strip/main.js
+@@ -59,6 +59,10 @@ const WHEEL_STEP = 0.25; // of a view width of wheel travel moves one column
+ const MIN_VIEW = 0.2; // pinned columns always leave this much of the view to slide
+ const COL_MIN = 140; // px: a column can't be dragged narrower
+ const ROW_MIN = 90; // px: a stacked pane can't be dragged shorter
++// The least time between two layout writes. A burst (a fling, a held key)
++// writes its first step at once and then its latest state every WRITE_MS;
++// the steps in between were never going to be seen.
++const WRITE_MS = 100;
+ const SETTLE = 250; // ms without the dragged sizes changing before the strip adopts them
+ 
+ const GAP = 6; // the soft gutter between panes, in the frame's tone: no lines
+@@ -89,6 +93,9 @@ const nonce = () => Date.now() + Math.random();
+ // still reads as the old one, so each writer keeps its piece here and every
+ // write puts all three back: the strip's columns, the open panel, the rail.
+ const LAYOUT_INTENT = "kanso.layout";
++// The strip writes its columns under their own key, many times a second, so
++// it never has to read back and copy the panel and rail to keep them.
++const STRIP_INTENT = "kanso.layout.strip";
+ 
+ function walkLayout(node, id) {
+   if (node?.id === id) return node;
+@@ -99,24 +106,16 @@ function walkLayout(node, id) {
+   return null;
+ }
+ 
+-function paintLayout(tree) {
++// The strip puts its own columns in place itself; this puts back what the
++// other writers keep in the intent: the open panel and the rail.
++function paintOthers(tree) {
+   const intent = shared(LAYOUT_INTENT);
+-  if (!intent || !tree) return;
+-  if (intent.nodes) {
+-    const body = walkLayout(tree, "work-body");
+-    if (body?.children) {
+-      const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
+-      const at = body.children.findIndex(mine);
+-      const rest = body.children.filter((n) => !mine(n));
+-      const i = Math.max(0, at);
+-      body.children = [...rest.slice(0, i), ...JSON.parse(JSON.stringify(intent.nodes)), ...rest.slice(i)];
+-    }
+-  }
++  if (!intent) return;
+   if ("panel" in intent) {
+     const body = walkLayout(tree, "panel-body");
+     const wrap = walkLayout(tree, "panel") ?? body;
+     if (body) {
+-      const child = intent.panel ? JSON.parse(JSON.stringify(intent.panel)) : null;
++      const child = intent.panel ?? null; // never changed here; layout.set copies it
+       body.children = child ? [child] : [];
+       if (child) body.active = child.id;
+       else delete body.active;
+@@ -132,10 +131,6 @@ function paintLayout(tree) {
+   }
+ }
+ 
+-function rememberLayout(patch) {
+-  setShared(LAYOUT_INTENT, { ...(shared(LAYOUT_INTENT) ?? {}), ...patch });
+-}
+-
+ // A header's wheel events arrive faster than the controller renders. Each one
+ // carries only its own delta, so keep the sum of the ones not yet applied.
+ function postScroll(d) {
+@@ -212,9 +207,9 @@ export default class Strip extends View {
+     this.usedIntent = shared("strip.intent")?.at ?? null;
+     this.pendingFocus = null;
+     this.sets = [];
+-    // Scrolling writes the layout at most every 60 ms, however fast the wheel.
++    // Scrolling writes the layout at most every WRITE_MS, however fast the wheel.
+     this.seq = 0; // bumped by whatever changes the model outside render (see render's key)
+-    cx.timer.every(60, (cx) => { if (this.dirty) { this.dirty = false; this.seq++; cx.notify(); } });
++    cx.timer.every(WRITE_MS / 2, (cx) => { if (this.dirty) { this.dirty = false; this.seq++; cx.notify(); } });
+     // A drag on one of Herdr's dividers changes the tree without telling us.
+     cx.timer.every(150, (cx) => {
+       // A pane let go where nothing takes drops (a gutter) is held until
+@@ -976,29 +971,37 @@ export default class Strip extends View {
+   apply(nodes) {
+     const text = JSON.stringify(nodes);
+     if (text === this.applied || this.writing) return false;
++    const now = Date.now();
++    // Coalesce before reading anything: a write skipped here costs no tree
++    // read; the timer sends the latest state once WRITE_MS have passed.
++    const tabBlock = nodes.length === 1 && nodes[0] === TAB_BLOCK;
++    if (!tabBlock && now - (this.sets.at(-1) ?? 0) < WRITE_MS) { this.dirty = true; return false; }
+     const tree = layout();
+     const body = find(tree, "work-body");
+     if (!body?.children) return false;
+     const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
+-    if (nodes.length === 1 && nodes[0] === TAB_BLOCK && body.children.filter(mine).length === 1 && body.children.find(mine)?.content?.tab) {
++    if (tabBlock && body.children.filter(mine).length === 1 && body.children.find(mine)?.content?.tab) {
+       this.applied = text;
+-      rememberLayout({ nodes: JSON.parse(text) });
++      setShared(STRIP_INTENT, { nodes, sizesBefore: this.sizesOf(body.children) });
+       return false;
+     }
+-    const now = Date.now();
+-    // Coalesce: at most one write every 50 ms; the 60 ms timer sends the rest.
+-    if (now - (this.sets.at(-1) ?? 0) < 50) { this.dirty = true; return false; }
++    if (tabBlock && now - (this.sets.at(-1) ?? 0) < WRITE_MS) { this.dirty = true; return false; }
+     this.sets = this.sets.filter((t) => now - t < 3000);
+-    // 90 leaves room for a scroll (the cap above is ~60 in 3 s) plus a panel
+-    // or rail write. Past that, something is rewriting the tree in a loop.
+-    if (this.sets.length >= 90) { this.halted = now; return false; }
++    // The coalescing above allows 30 writes in 3 s; more means something
++    // got past it and is rewriting the tree in a loop.
++    if (this.sets.length > 3000 / WRITE_MS) { this.halted = now; return false; }
+     this.sets.push(now);
+     this.writing = true;
+     try {
+       this.applied = text;
+       this.appliedSizes = JSON.stringify(this.sizesOf(nodes));
+-      rememberLayout({ nodes: JSON.parse(text) });
+-      paintLayout(tree);
++      // The host copies what it is given, so nodes go as they are, once to
++      // the intent and once in the tree.
++      setShared(STRIP_INTENT, { nodes, sizesBefore: this.sizesOf(body.children) });
++      const at = Math.max(0, body.children.findIndex(mine));
++      const rest = body.children.filter((n) => !mine(n));
++      body.children = [...rest.slice(0, at), ...nodes, ...rest.slice(at)];
++      paintOthers(tree);
+       run("layout.set", { layout: tree });
+     } catch { this.halted = now; this.applied = null; return false; }
+     finally { this.writing = false; }
+diff --git a/kanso/mods/kanso-tabs/main.js b/kanso/mods/kanso-tabs/main.js
+index 71c4761..e58240f 100644
+--- a/kanso/mods/kanso-tabs/main.js
++++ b/kanso/mods/kanso-tabs/main.js
+@@ -11,6 +11,9 @@ import { spaces, panes, agents, terminals, run, openOverlay, theme, window, shar
+ // reads as the old one, so each writer keeps its piece in kanso.layout and
+ // every write puts the strip, the panel and the rail back.
+ const LAYOUT_INTENT = "kanso.layout";
++// The strip writes its columns under their own key, many times a second, so
++// it never has to read back and copy the panel and rail to keep them.
++const STRIP_INTENT = "kanso.layout.strip";
+ 
+ function walkLayout(node, id) {
+   if (node?.id === id) return node;
+@@ -21,9 +24,9 @@ function walkLayout(node, id) {
+   return null;
+ }
+ 
+-function paintLayout(tree) {
+-  const intent = shared(LAYOUT_INTENT);
+-  if (!intent || !tree) return;
++function paintLayout(tree, preserveSizes = true) {
++  if (!tree) return;
++  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+   if (intent.nodes) {
+     const body = walkLayout(tree, "work-body");
+     if (body?.children) {
+@@ -31,7 +34,18 @@ function paintLayout(tree) {
+       const at = body.children.findIndex(mine);
+       const rest = body.children.filter((n) => !mine(n));
+       const i = Math.max(0, at);
+-      body.children = [...rest.slice(0, i), ...JSON.parse(JSON.stringify(intent.nodes)), ...rest.slice(i)];
++      const nodes = JSON.parse(JSON.stringify(intent.nodes));
++      // Native dividers leave px sizes before the strip's adopt timer runs.
++      // Keep those edits, but not sizes from the tree a pending strip write
++      // was based on: replaying those would undo an explicit width command.
++      const keepSize = (node) => {
++        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
++        if (before !== undefined && live?.size?.px !== undefined
++          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
++        for (const child of node.children ?? []) keepSize(child);
++      };
++      if (preserveSizes) nodes.forEach(keepSize);
++      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+     }
+   }
+   if ("panel" in intent) {
+diff --git a/kanso/mods/open-with/main.js b/kanso/mods/open-with/main.js
+index 2a3443d..cb2abbf 100644
+--- a/kanso/mods/open-with/main.js
++++ b/kanso/mods/open-with/main.js
+@@ -17,6 +17,9 @@ import { exec, run, notify, theme, props, closeOverlay, focused, panes, spaces,
+ 
+ // Same helper as kanso-strip, kanso-tabs, kanso-spaces and kanso-panel.
+ const LAYOUT_INTENT = "kanso.layout";
++// The strip writes its columns under their own key, many times a second, so
++// it never has to read back and copy the panel and rail to keep them.
++const STRIP_INTENT = "kanso.layout.strip";
+ 
+ function walkLayout(node, id) {
+   if (node?.id === id) return node;
+@@ -27,9 +30,9 @@ function walkLayout(node, id) {
+   return null;
+ }
+ 
+-function paintLayout(tree) {
+-  const intent = shared(LAYOUT_INTENT);
+-  if (!intent || !tree) return;
++function paintLayout(tree, preserveSizes = true) {
++  if (!tree) return;
++  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+   if (intent.nodes) {
+     const body = walkLayout(tree, "work-body");
+     if (body?.children) {
+@@ -37,7 +40,18 @@ function paintLayout(tree) {
+       const at = body.children.findIndex(mine);
+       const rest = body.children.filter((n) => !mine(n));
+       const i = Math.max(0, at);
+-      body.children = [...rest.slice(0, i), ...JSON.parse(JSON.stringify(intent.nodes)), ...rest.slice(i)];
++      const nodes = JSON.parse(JSON.stringify(intent.nodes));
++      // Native dividers leave px sizes before the strip's adopt timer runs.
++      // Keep those edits, but not sizes from the tree a pending strip write
++      // was based on: replaying those would undo an explicit width command.
++      const keepSize = (node) => {
++        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
++        if (before !== undefined && live?.size?.px !== undefined
++          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
++        for (const child of node.children ?? []) keepSize(child);
++      };
++      if (preserveSizes) nodes.forEach(keepSize);
++      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+     }
+   }
+   if ("panel" in intent) {
+@@ -69,12 +83,19 @@ function commitLayout(patch) {
+   return true;
+ }
+ 
+-// One PowerShell single-quoted literal. A quote inside doubles; a newline
+-// would break out of the -Command string, so it is refused.
++// PowerShell also treats U+2018..U+201B as single-quote delimiters.
++// Double every delimiter so paths remain data inside -Command.
+ function psQuote(s) {
+   const v = String(s);
+   if (/[\r\n\0]/.test(v)) throw new Error("Invalid path");
+-  return `'${v.replace(/'/g, "''")}'`;
++  return `'${v.replace(/['\u2018-\u201b]/g, (quote) => quote + quote)}'`;
++}
++
++// Start-Process joins ArgumentList into a Windows command line. Quote each
++// argument there too, doubling backslashes before a quote or the closing one.
++function windowsArg(s) {
++  return '"' + String(s).replace(/(\\*)"/g, (_match, slashes) => slashes + slashes + '\\"')
++    .replace(/\\+$/g, (slashes) => slashes + slashes) + '"';
+ }
+ 
+ const MOD = "open-with";
+@@ -299,11 +320,9 @@ done`;
+   }
+ 
+   spawn(cli, args) {
+-    // cmd /c joins its tail and parses & | % again. Start-Process takes the
+-    // path and the arguments as single-quoted PowerShell literals.
+     if (this.platform === "windows") {
+-      const list = args.map(psQuote).join(",");
+-      const script = `Start-Process -FilePath ${psQuote(cli)} -ArgumentList @(${list})`;
++      const commandLine = args.map(windowsArg).join(" ");
++      const script = `Start-Process -FilePath ${psQuote(cli)} -ArgumentList ${psQuote(commandLine)} -ErrorAction Stop`;
+       return exec("powershell", ["-NoProfile", "-NonInteractive", "-Command", script]);
+     }
+     return exec("sh", ["-c", DETACH, "sh", cli, ...args]);

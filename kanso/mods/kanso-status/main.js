@@ -11,8 +11,11 @@ import { spaces, agents, theme, run, window, props } from "herdr";
 export default class WorkspaceStatus extends View {
   render() {
     const t = theme();
-    const space = spaces().find(s => s.active);
-    const list = agents();
+    // Two copies share the row. Each reads only what its side draws.
+    const side = props()?.side;
+    const left = side !== "right", right = side !== "left";
+    const space = left ? spaces().find(s => s.active) : null;
+    const list = right ? agents() : [];
     const needs = list.filter(a => a.status === "blocked").length;
     const working = list.filter(a => a.status === "working").length;
     const label = (icon, text) => h_flex().gap(6).items_center().min_w(0)
@@ -22,8 +25,6 @@ export default class WorkspaceStatus extends View {
       : working > 0 ? `${working} of ${list.length} working` : `${list.length} ${list.length === 1 ? "agent" : "agents"} idle`;
     // props.side: "left" draws where you are, "right" the agents and palette
     // (the strip's minimap sits between two copies); none draws both.
-    const side = props()?.side;
-    const left = side !== "right", right = side !== "left";
     return h_flex().size_full().px(12).gap(18).items_center().text_size(11.5).text_color(t.muted)
       .when(right && !left, el => el.justify_end())
       .when(left, el => el.child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))

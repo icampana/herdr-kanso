@@ -6,6 +6,88 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, agents, terminals, run, openOverlay, theme, window, shared, setShared, layout, readTextFile, appHome } from "herdr";
 
+// Same helper as kanso-strip, kanso-spaces, kanso-panel and open-with.
+// layout.set replaces the whole tree, and a set that has not landed still
+// reads as the old one, so each writer keeps its piece in kanso.layout and
+// every write puts the strip, the panel and the rail back.
+const LAYOUT_INTENT = "kanso.layout";
+// The strip writes its columns under their own key, many times a second, so
+// it never has to read back and copy the panel and rail to keep them.
+const STRIP_INTENT = "kanso.layout.strip";
+
+function walkLayout(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = walkLayout(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function paintLayout(tree, preserveSizes = true) {
+  if (!tree) return;
+  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+  if (intent.nodes) {
+    const body = walkLayout(tree, "work-body");
+    if (body?.children) {
+      const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
+      const at = body.children.findIndex(mine);
+      const rest = body.children.filter((n) => !mine(n));
+      const i = Math.max(0, at);
+      const nodes = JSON.parse(JSON.stringify(intent.nodes));
+      // Native dividers leave px sizes before the strip's adopt timer runs.
+      // Keep those edits, but not sizes from the tree a pending strip write
+      // was based on: replaying those would undo an explicit width command.
+      const keepSize = (node) => {
+        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
+        if (before !== undefined && live?.size?.px !== undefined
+          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
+        for (const child of node.children ?? []) keepSize(child);
+      };
+      if (preserveSizes) nodes.forEach(keepSize);
+      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+    }
+  }
+  if ("panel" in intent) {
+    const body = walkLayout(tree, "panel-body");
+    const wrap = walkLayout(tree, "panel") ?? body;
+    if (body) {
+      const child = intent.panel ? JSON.parse(JSON.stringify(intent.panel)) : null;
+      body.children = child ? [child] : [];
+      if (child) body.active = child.id;
+      else delete body.active;
+      if (wrap) wrap.hidden = !child;
+    }
+  }
+  if (intent.rail) {
+    const sidebar = (tree.children ?? []).find((n) => n.id === "sidebar");
+    if (sidebar) {
+      tree.resizable = intent.rail.open;
+      sidebar.min = intent.rail.min;
+    }
+  }
+}
+
+function rememberLayout(patch) {
+  setShared(LAYOUT_INTENT, { ...(shared(LAYOUT_INTENT) ?? {}), ...patch });
+}
+
+function commitLayout(patch) {
+  rememberLayout(patch);
+  const tree = layout();
+  if (!tree) return false;
+  paintLayout(tree);
+  run("layout.set", { layout: tree });
+  return true;
+}
+
+function storedObject(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch { return {}; }
+}
+
 // The Specs button's extra (added by José Gutiérrez, minimalistic): this space's pending count, published by
 // sdd-focused as "sdd.badge" {space, n, pending: [paths]}, and a red dot when an
 // agent started on one of them (terminal label spec=<path>) needs you.
@@ -45,7 +127,7 @@ function find(node, id) {
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
-    this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    this.panels = storedObject("panels");
     // Specs and Insights are separate mods: offer each only where it is installed.
     this.installed = {};
     for (const id of ["specs", "insights"]) cx.spawn(async (cx) => {
@@ -65,15 +147,11 @@ export default class Tabs extends View {
   // Shows panel `id` (null: closes it) by rewriting the panel stack to hold
   // only that block.
   mount(id) {
-    const tree = layout();
-    const panel = find(tree, "panel"), body = find(tree, "panel-body");
-    if (!body || (id && !PANELS[id])) return;
-    body.children = id ? [{ id, type: "block", content: { ...PANELS[id] } }] : [];
-    if (id) body.active = id; else delete body.active;
-    (panel ?? body).hidden = !id;
+    if (id && !PANELS[id]) return;
+    if (!walkLayout(layout(), "panel-body")) return;
     this.want = id;
     this.mountedAt = Date.now();
-    run("layout.set", { layout: tree });
+    commitLayout({ panel: id ? { id, type: "block", content: { ...PANELS[id] } } : null });
   }
 
   // A change just sent hasn't landed yet: don't read the old state as a choice.

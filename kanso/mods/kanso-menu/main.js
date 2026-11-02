@@ -18,21 +18,16 @@ function openWith(p) {
   openOverlay({ mod: "open-with", kind: "popup", width: 340, props: { folder: p.cwd, machine: space?.machine ?? null } });
 }
 
-// The model pane behind the clicked terminal (or block).
-function realPane(tg) {
+function items(tg) {
   const ps = panes();
-  return ps.find((p) => p.pane === tg.pane)?.pane
+  const pane = ps.find((p) => p.pane === tg.pane)?.pane
     ?? ps.find((p) => p.terminal && p.terminal === tg.terminal)?.pane
     ?? String(tg.pane ?? "").replace(/^term-/, "");
-}
-
-function items(tg) {
-  const pane = realPane(tg);
   const all = terminals();
   const term = all.find((t) => t.address === tg.terminal);
   const parent = term?.parent && all.find((t) => t.address === term.parent);
   const toProgram = term?.labels?.["herdr.right-click"] === "program";
-  const info = panes().find((p) => p.pane === pane);
+  const info = ps.find((p) => p.pane === pane);
   const pinned = Boolean(shared("strip.state")?.[info?.tab]?.cols?.find((c) => c.panes?.includes(pane))?.pin);
   // A split first tells the strip where the new pane goes.
   const split = (label, dir, icon, key) => [label, () => {

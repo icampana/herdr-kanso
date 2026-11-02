@@ -59,6 +59,10 @@ const WHEEL_STEP = 0.25; // of a view width of wheel travel moves one column
 const MIN_VIEW = 0.2; // pinned columns always leave this much of the view to slide
 const COL_MIN = 140; // px: a column can't be dragged narrower
 const ROW_MIN = 90; // px: a stacked pane can't be dragged shorter
+// The least time between two layout writes. A burst (a fling, a held key)
+// writes its first step at once and then its latest state every WRITE_MS;
+// the steps in between were never going to be seen.
+const WRITE_MS = 100;
 const SETTLE = 250; // ms without the dragged sizes changing before the strip adopts them
 
 const GAP = 6; // the soft gutter between panes, in the frame's tone: no lines
@@ -83,6 +87,64 @@ function find(node, id) {
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const step = (list, v) => list[(list.findIndex((s) => Math.abs(s - v) < EPS) + 1) % list.length];
 const nonce = () => Date.now() + Math.random();
+
+// Shared with the other layout writers (kanso-tabs, kanso-spaces, kanso-panel,
+// open-with). layout.set replaces the whole tree, and a set that has not landed
+// still reads as the old one, so each writer keeps its piece here and every
+// write puts all three back: the strip's columns, the open panel, the rail.
+const LAYOUT_INTENT = "kanso.layout";
+// The strip writes its columns under their own key, many times a second, so
+// it never has to read back and copy the panel and rail to keep them.
+const STRIP_INTENT = "kanso.layout.strip";
+
+function walkLayout(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = walkLayout(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+// The strip puts its own columns in place itself; this puts back what the
+// other writers keep in the intent: the open panel and the rail.
+function paintOthers(tree) {
+  const intent = shared(LAYOUT_INTENT);
+  if (!intent) return;
+  if ("panel" in intent) {
+    const body = walkLayout(tree, "panel-body");
+    const wrap = walkLayout(tree, "panel") ?? body;
+    if (body) {
+      const child = intent.panel ?? null; // never changed here; layout.set copies it
+      body.children = child ? [child] : [];
+      if (child) body.active = child.id;
+      else delete body.active;
+      if (wrap) wrap.hidden = !child;
+    }
+  }
+  if (intent.rail) {
+    const sidebar = (tree.children ?? []).find((n) => n.id === "sidebar");
+    if (sidebar) {
+      tree.resizable = intent.rail.open;
+      sidebar.min = intent.rail.min;
+    }
+  }
+}
+
+// A header's wheel events arrive faster than the controller renders. Each one
+// carries only its own delta, so keep the sum of the ones not yet applied.
+function postScroll(d) {
+  const prev = shared("strip.req");
+  const open = prev && prev.op === "scroll" && prev.n !== shared("strip.ack");
+  setShared("strip.req", { op: "scroll", d: (open ? prev.d : 0) + d, n: nonce() });
+}
+
+function showsTerminal(node, id) {
+  if (!node || !id) return false;
+  if (node.content?.terminal === id) return true;
+  for (const child of node.children ?? []) if (showsTerminal(child, id)) return true;
+  return false;
+}
 
 // The node a column is in the tree.
 const nodeId = (c) => (c.panes.length === 1 ? `strip-${c.panes[0]}` : `strip-col-${c.panes[0]}`);
@@ -145,9 +207,9 @@ export default class Strip extends View {
     this.usedIntent = shared("strip.intent")?.at ?? null;
     this.pendingFocus = null;
     this.sets = [];
-    // Scrolling writes the layout at most every 60 ms, however fast the wheel.
+    // Scrolling writes the layout at most every WRITE_MS, however fast the wheel.
     this.seq = 0; // bumped by whatever changes the model outside render (see render's key)
-    cx.timer.every(60, (cx) => { if (this.dirty) { this.dirty = false; this.seq++; cx.notify(); } });
+    cx.timer.every(WRITE_MS / 2, (cx) => { if (this.dirty) { this.dirty = false; this.seq++; cx.notify(); } });
     // A drag on one of Herdr's dividers changes the tree without telling us.
     cx.timer.every(150, (cx) => {
       // A pane let go where nothing takes drops (a gutter) is held until
@@ -357,7 +419,7 @@ export default class Strip extends View {
   wheelReq(e) {
     const lines = e.delta_lines?.y ?? 0;
     const d = lines ? -lines * 40 : (Math.abs(e.delta.x) > Math.abs(e.delta.y) ? -e.delta.x : -e.delta.y);
-    if (d) setShared("strip.req", { op: "scroll", d: d / WHEEL_PX, n: nonce() });
+    if (d) postScroll(d / WHEEL_PX);
   }
 
   // The pane's folder in a code editor (the `open-with` mod), on the machine
@@ -827,6 +889,7 @@ export default class Strip extends View {
     const req = shared("strip.req");
     if (!req || req.n === this.lastReq) return;
     this.lastReq = req.n;
+    if (shared("strip.ack") !== req.n) setShared("strip.ack", req.n);
     if (req.op === "scroll") this.slide(st, req.d);
     else if (req.op === "focus") this.focusOn(st, req.pane, ps);
     else if (req.op === "width") {
@@ -907,24 +970,41 @@ export default class Strip extends View {
 
   apply(nodes) {
     const text = JSON.stringify(nodes);
-    if (text === this.applied) return false;
+    if (text === this.applied || this.writing) return false;
+    const now = Date.now();
+    // Coalesce before reading anything: a write skipped here costs no tree
+    // read; the timer sends the latest state once WRITE_MS have passed.
+    const tabBlock = nodes.length === 1 && nodes[0] === TAB_BLOCK;
+    if (!tabBlock && now - (this.sets.at(-1) ?? 0) < WRITE_MS) { this.dirty = true; return false; }
     const tree = layout();
     const body = find(tree, "work-body");
     if (!body?.children) return false;
     const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
-    if (nodes.length === 1 && nodes[0] === TAB_BLOCK && body.children.filter(mine).length === 1 && body.children.find(mine)?.content?.tab) { this.applied = text; return false; }
-    const now = Date.now();
-    // Coalesce: at most one write every 50 ms; the 60 ms timer sends the rest.
-    if (now - (this.sets.at(-1) ?? 0) < 50) { this.dirty = true; return false; }
+    if (tabBlock && body.children.filter(mine).length === 1 && body.children.find(mine)?.content?.tab) {
+      this.applied = text;
+      setShared(STRIP_INTENT, { nodes, sizesBefore: this.sizesOf(body.children) });
+      return false;
+    }
+    if (tabBlock && now - (this.sets.at(-1) ?? 0) < WRITE_MS) { this.dirty = true; return false; }
     this.sets = this.sets.filter((t) => now - t < 3000);
-    if (this.sets.length >= 60) { this.halted = now; return false; } // 20 writes a second for 3 s: something is wrong
+    // The coalescing above allows 30 writes in 3 s; more means something
+    // got past it and is rewriting the tree in a loop.
+    if (this.sets.length > 3000 / WRITE_MS) { this.halted = now; return false; }
     this.sets.push(now);
-    const at = body.children.findIndex(mine);
-    const rest = body.children.filter((n) => !mine(n));
-    body.children = [...rest.slice(0, Math.max(0, at)), ...nodes, ...rest.slice(Math.max(0, at))];
-    this.applied = text;
-    this.appliedSizes = JSON.stringify(this.sizesOf(nodes));
-    try { run("layout.set", { layout: tree }); } catch { this.halted = now; return false; }
+    this.writing = true;
+    try {
+      this.applied = text;
+      this.appliedSizes = JSON.stringify(this.sizesOf(nodes));
+      // The host copies what it is given, so nodes go as they are, once to
+      // the intent and once in the tree.
+      setShared(STRIP_INTENT, { nodes, sizesBefore: this.sizesOf(body.children) });
+      const at = Math.max(0, body.children.findIndex(mine));
+      const rest = body.children.filter((n) => !mine(n));
+      body.children = [...rest.slice(0, at), ...nodes, ...rest.slice(at)];
+      paintOthers(tree);
+      run("layout.set", { layout: tree });
+    } catch { this.halted = now; this.applied = null; return false; }
+    finally { this.writing = false; }
     return true;
   }
 
@@ -994,8 +1074,10 @@ export default class Strip extends View {
       this.save();
 
       if (this.pendingFocus) {
-        const shownNow = JSON.stringify(find(layout(), "work-body") ?? {}).includes(`"terminal":"${this.pendingFocus}"`);
-        if (shownNow) { run("pane.focus", { terminal: this.pendingFocus }); this.pendingFocus = null; }
+        if (showsTerminal(find(layout(), "work-body"), this.pendingFocus)) {
+          run("pane.focus", { terminal: this.pendingFocus });
+          this.pendingFocus = null;
+        }
       }
     }
 

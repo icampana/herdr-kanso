@@ -1,6 +1,7 @@
 // Kanso's pull request panel, by jlopezlira (https://github.com/jlopezlira/herdr-kanso). Apache-2.0.
 //
-// The open pull request of the focused pane's branch, read with the GitHub CLI
+// The open pull request of the focused pane's branch, or any of your open ones
+// in that repository (listed above it, a click shows one), read with the GitHub CLI
 // (`gh`), in the spirit of T3 Code's pull request view and drawn the way the
 // Spend panel is: one centered column, no cards or uppercase labels, hierarchy
 // from type size, weight and tone, hairlines between rows, a breathing
@@ -27,6 +28,9 @@ const THREADS = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$
 // which, unlike `collaborators`, does not need push access to read.
 const PEOPLE = "query($o:String!,$r:String!){viewer{login} repository(owner:$o,name:$r){assignableUsers(first:100){pageInfo{hasNextPage} nodes{login name}}}}";
 const LABELS = "query($o:String!,$r:String!){repository(owner:$o,name:$r){labels(first:100,orderBy:{field:NAME,direction:ASC}){pageInfo{hasNextPage} nodes{name color description}}}}";
+// Yours, open, in this repository: the list a click picks from.
+const MINE = "number,title,headRefName,isDraft,updatedAt";
+const MINE_ROWS = 5;
 const MAX_DIFF = 400;
 const FILE_ROWS = 8;
 
@@ -99,7 +103,8 @@ function quietLink(id, label, onClick, c, options = {}) {
 export class PullRequest {
   init(cx) {
     this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
-    this.expanded = { checks: false, files: false }; this.width = 368;
+    this.expanded = { checks: false, files: false, mine: false }; this.width = 368;
+    this.mine = []; this.selected = null; // null: the branch's own pull request
     this.picker = null; this.candidates = null; this.query = "";
     this.search = InputState.new({ placeholder: "Search" });
     this.search.on("change", (_e, cx) => { this.query = this.search.value(); cx.notify(); });
@@ -126,9 +131,11 @@ export class PullRequest {
     if (context !== this.context) {
       this.context = context; this.root = null; this.branch = null; this.pr = null; this.threads = []; this.diffs = null;
       this.openFile = null; this.error = null; this.note = null; this.none = false; this.armed = null; this.picker = null;
+      this.mine = []; this.selected = null;
     }
     if (!cwd) return;
     this.loading = true;
+    const want = this.selected;
     cx.spawn(async (cx) => {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
@@ -137,10 +144,18 @@ export class PullRequest {
         this.root = top.stdout.trim(); this.on = on;
         const branch = await exec("git", ["branch", "--show-current"], { cwd: this.root, on });
         this.branch = branch.stdout.trim() || null;
-        let view;
-        try { view = await this.gh(["pr", "view", "--json", FIELDS]); }
-        catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
-        if (key() !== context) return;
+        let view, mine;
+        try {
+          [view, mine] = await Promise.all([
+            this.gh(["pr", "view", ...(want ? [String(want)] : []), "--json", FIELDS]),
+            this.gh(["pr", "list", "--author", "@me", "--state", "open", "--limit", "50", "--json", MINE]).catch(() => null),
+          ]);
+        } catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
+        // A click picked another one while this read was out: drop it, the finally reads again.
+        if (key() !== context || this.selected !== want) return;
+        if (mine?.code === 0) {
+          try { this.mine = JSON.parse(mine.stdout).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); } catch {}
+        }
         if (view.code !== 0) {
           const why = (view.stderr || view.stdout).trim();
           if (/no (open )?pull requests? found|could not determine current branch/i.test(why)) { this.none = true; this.pr = null; this.error = null; }
@@ -166,8 +181,20 @@ export class PullRequest {
           if (me?.code === 0) this.viewer = me.stdout.trim();
         }
       } catch (e) { if (key() === context) this.error = { title: "GitHub could not be read.", detail: String(e?.message ?? e) }; }
-      finally { this.loading = false; this.loadedAt = Date.now(); cx.notify(); }
+      finally {
+        this.loading = false; this.loadedAt = Date.now(); cx.notify();
+        if (this.selected !== want && key() === context) this.refresh(cx);
+      }
     });
+  }
+
+  // Shows another of your pull requests; the branch's own goes back to following the branch.
+  choose(p, cx) {
+    const next = p.headRefName === this.branch ? null : p.number;
+    if (this.pr?.number === p.number && this.selected === next) return;
+    this.selected = next; this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
+    this.none = false; this.error = null; this.note = null; this.armed = null; this.picker = null;
+    this.loadedAt = 0; this.refresh(cx); cx.notify();
   }
 
   // ---- actions ----
@@ -337,6 +364,28 @@ export class PullRequest {
   }
 
   // ---- drawing, as Spend draws ----
+
+  // Your open pull requests in this repository, newest first, the shown one in weight.
+  // Hidden when the only one is the one already shown.
+  yours(c) {
+    const list = this.mine ?? [], shown = this.pr?.number;
+    if (!list.length || (list.length === 1 && list[0].number === shown)) return null;
+    const open = this.expanded.mine, rows = open ? list : list.slice(0, MINE_ROWS);
+    return v_flex().w_full()
+      .child(this.section(c, "Your open pull requests", String(list.length)))
+      .children(rows.map((p, i) => Button.new(`pr-mine-${p.number}`).w_full().py(7).cursor_pointer()
+        .when(i > 0, (el) => el.border_t(1).border_color(c.border))
+        .hover((s) => s.opacity(0.75))
+        .accessibility_label(`#${p.number} ${p.title}`)
+        .on_click((_e, cx) => this.choose(p, cx))
+        .child(h_flex().w_full().items_end().gap(G.md)
+          .child(v_flex().flex_1().min_w(0).gap(2)
+            .child(div().truncate().text_size(13).text_color(c.text).when(p.number === shown, (e) => e.font_medium()).child(p.title))
+            .child(div().truncate().text_size(11).text_color(c.dim)
+              .child([`#${p.number}`, p.headRefName, p.headRefName === this.branch && "this branch", p.isDraft && "draft"].filter(Boolean).join(" · "))))
+          .child(div().flex_none().text_size(11).text_color(p.number === shown ? c.text : c.dim).child(p.number === shown ? "shown" : ago(p.updatedAt))))))
+      .when(list.length > MINE_ROWS, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-mine-more", open ? "Show fewer" : `Show ${list.length - MINE_ROWS} more`, (cx) => { this.expanded.mine = !open; cx.notify(); }, c))));
+  }
 
   iconButton(id, icon, tip, onClick, c, spin) {
     const glyph = svg(`${ICON}${icon}.svg`).size(15).text_color(spin ? c.text : c.muted);
@@ -580,8 +629,10 @@ export class PullRequest {
     const c = tokens(theme());
     const narrow = (this.width || 368) < 560;
     let body;
+    const yours = this.yours(c);
     if (this.pr) {
       body = v_flex().w_full().gap(narrow ? 36 : 48)
+        .when(Boolean(yours), (el) => el.child(yours))
         .child(this.hero(c, narrow))
         .child(this.people(c))
         .when(this.checks().length > 0, (el) => el.child(this.checksList(c)))
@@ -594,6 +645,8 @@ export class PullRequest {
       this.note ?? "Push the branch, then open one on GitHub.",
       quietLink("pr-create", this.busy === "Create" ? "Opening GitHub…" : "Create it on GitHub", (cx) => this.createPr(cx), c, { size: 13, color: c.text, disabled: Boolean(this.busy) }));
     else body = this.loading || !this.context ? this.skeleton(c, narrow) : this.waiting(c, "No folder", "Focus a pane inside a repository.");
+    // Without one shown (none on this branch, an error, still reading), the list stays below.
+    if (!this.pr && yours) body = v_flex().w_full().gap(narrow ? 36 : 48).child(body).child(yours);
 
     return v_flex().id("kanso-pr").size_full().min_h(0).bg(c.canvas).text_color(c.text).overflow_y_scrollbar()
       .on_size_change((size, sizeCx) => { if (Math.abs((this.width || 0) - size.width) >= 1) { this.width = size.width; sizeCx.notify(); } })

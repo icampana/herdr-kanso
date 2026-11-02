@@ -134,12 +134,18 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       told `files`, `changes` or `pr` (`props.panel`), `token-spend`
       (Insights) or `sdd-focused`.
       The PR panel (`kanso-panel` with `pr`) shows the open pull request of the focused
-      pane's branch, as T3 Code does, drawn like the Spend panel: one
+      pane's branch, as T3 Code does, or another of your open ones, drawn like the Spend panel: one
       centered column (max 1080, 16 px sides under 560 wide, else 32), no
       cards or uppercase labels, `canvas` behind, hierarchy from size, weight
       and tone, hairlines between list rows. Top to bottom:
       - Header: "Pull request" (17, 20 when wide) and two 26 icon buttons,
         refresh (spins while reading) and open on GitHub.
+      - Your open pull requests (`gh pr list --author @me`, open, in this
+        repository, newest first), unless the only one is the one shown:
+        the title (13, medium when shown) over `#n · branch`, "this branch"
+        and "draft" (11, dim), and at the right its age or "shown"; 5 shown,
+        "Show N more". A click shows that one; the branch's own goes back
+        to following the branch. Without one shown, the list sits below.
       - Hero: `#n · head → base` (15, muted); the title (22, 28 wide, light,
         line height 1.25); a 6 dot and the verdict (15): ready to merge
         (green), checks failing, conflicts or changes requested (red),
@@ -462,9 +468,26 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
 - Herdr's own terminal menu passes a terminal block's id (`term-<pane>`) as
   its target pane, so its Split and Close fail with "no pane". Kanso ships
   its own menu, which finds the real pane from the clicked terminal.
-- Cap layout writes: the strip writes only when its tree changes, and pauses
-  itself for 10 s after 6 writes in 3 s, so a mistake can't keep the window
-  busy.
+- Cap layout writes: the strip writes only when its tree changes, at most
+  once every 100 ms (checked before it reads the tree, so a skipped write
+  costs nothing; a burst writes its first step at once and then its latest
+  state), and pauses itself for 10 s if more than 30 writes in 3 s ever get
+  past that, so a mistake can't keep the window busy.
+- `layout.set` replaces the whole tree, and a set that has not landed still
+  reads as the old one. The strip, the tabs, the panel and the sidebar keep
+  their piece in shared state and put all three back on every write, so one
+  writer cannot drop another's: the strip's columns in `kanso.layout.strip`
+  (`nodes`, `sizesBefore`), written by the strip alone so it never reads the
+  rest back, and the panel and rail in `kanso.layout` (`panel`, `rail`).
+  The strip also records `sizesBefore`: other writers preserve new native
+  divider sizes while its adopt timer catches up, but replay pending strip
+  width commands over the old sizes they were based on.
+- On Unix, Files lists a folder with one `find -print0` and no shell: a
+  directory is printed twice in a row (no name repeats in a folder), so its
+  type costs no extra call, and NUL separators keep names with newlines
+  whole. It keeps 501 entries and displays 500, the extra one only to detect
+  truncation. If `find` can't run or its output passes exec's 8 MiB, it falls
+  back to Bash reading the same `find` with a bounded loop.
 
 - Never use `.spin()` for a busy state. It redraws the whole window about
   30 times a second while any agent works, and every redraw repaints every

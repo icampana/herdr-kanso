@@ -2,7 +2,7 @@
 //
 // One mod, four panels: `props.panel` is "files" (a lazy file browser),
 // "changes" (git status, diffs and a commit), "pr" (the branch's pull
-// request) or "preview" (one file, rendered: Markdown as the SDK draws it,
+// request, or another of your open ones picked from a list) or "preview" (one file, rendered: Markdown as the SDK draws it,
 // anything else as read-only code; `props.path`, `props.on`). kanso-tabs mounts one of them in the panel stack on demand and
 // empties the stack to close it, so a panel exists only while it is shown
 // and never has to watch whether it is. Each panel is a plain class with

@@ -15,6 +15,89 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, run, notify, theme, props, closeOverlay, focused, panes, spaces, home, appHome, shared, setShared, layout, window as win } from "herdr";
 
+// Same helper as kanso-strip, kanso-tabs, kanso-spaces and kanso-panel.
+const LAYOUT_INTENT = "kanso.layout";
+// The strip writes its columns under their own key, many times a second, so
+// it never has to read back and copy the panel and rail to keep them.
+const STRIP_INTENT = "kanso.layout.strip";
+
+function walkLayout(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = walkLayout(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function paintLayout(tree, preserveSizes = true) {
+  if (!tree) return;
+  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+  if (intent.nodes) {
+    const body = walkLayout(tree, "work-body");
+    if (body?.children) {
+      const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
+      const at = body.children.findIndex(mine);
+      const rest = body.children.filter((n) => !mine(n));
+      const i = Math.max(0, at);
+      const nodes = JSON.parse(JSON.stringify(intent.nodes));
+      // Native dividers leave px sizes before the strip's adopt timer runs.
+      // Keep those edits, but not sizes from the tree a pending strip write
+      // was based on: replaying those would undo an explicit width command.
+      const keepSize = (node) => {
+        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
+        if (before !== undefined && live?.size?.px !== undefined
+          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
+        for (const child of node.children ?? []) keepSize(child);
+      };
+      if (preserveSizes) nodes.forEach(keepSize);
+      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+    }
+  }
+  if ("panel" in intent) {
+    const body = walkLayout(tree, "panel-body");
+    const wrap = walkLayout(tree, "panel") ?? body;
+    if (body) {
+      const child = intent.panel ? JSON.parse(JSON.stringify(intent.panel)) : null;
+      body.children = child ? [child] : [];
+      if (child) body.active = child.id;
+      else delete body.active;
+      if (wrap) wrap.hidden = !child;
+    }
+  }
+  if (intent.rail) {
+    const sidebar = (tree.children ?? []).find((n) => n.id === "sidebar");
+    if (sidebar) {
+      tree.resizable = intent.rail.open;
+      sidebar.min = intent.rail.min;
+    }
+  }
+}
+
+function commitLayout(patch) {
+  setShared(LAYOUT_INTENT, { ...(shared(LAYOUT_INTENT) ?? {}), ...patch });
+  const tree = layout();
+  if (!tree) return false;
+  paintLayout(tree);
+  run("layout.set", { layout: tree });
+  return true;
+}
+
+// PowerShell also treats U+2018..U+201B as single-quote delimiters.
+// Double every delimiter so paths remain data inside -Command.
+function psQuote(s) {
+  const v = String(s);
+  if (/[\r\n\0]/.test(v)) throw new Error("Invalid path");
+  return `'${v.replace(/['\u2018-\u201b]/g, (quote) => quote + quote)}'`;
+}
+
+// Start-Process joins ArgumentList into a Windows command line. Quote each
+// argument there too, doubling backslashes before a quote or the closing one.
+function windowsArg(s) {
+  return '"' + String(s).replace(/(\\*)"/g, (_match, slashes) => slashes + slashes + '\\"')
+    .replace(/\\+$/g, (slashes) => slashes + slashes) + '"';
+}
+
 const MOD = "open-with";
 const RECENT = `${MOD}.recent`;
 const FOUND = `${MOD}.found`;
@@ -118,21 +201,11 @@ async function detect(platform) {
 const TEXT = /\.(md|markdown|mdx|txt|text|log|json|jsonc|ya?ml|toml|csv|tsv|rst|adoc|org|ini|cfg|conf|env|sh|zsh|bash|fish|js|mjs|cjs|ts|tsx|jsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|lua|sql|html|css|scss|xml|svg)$/i;
 const PREVIEW = { id: "preview", name: "Preview in the panel", icon: "mods/kanso-chrome/icons/file-text.svg", builtin: true };
 
-function findNode(node, id) {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) { const found = findNode(child, id); if (found) return found; }
-  return null;
-}
 // Puts the preview in the side panel, as kanso-tabs' panel buttons mount theirs.
 function showPreview(file, machine) {
-  const tree = layout();
-  const panel = findNode(tree, "panel"), body = findNode(tree, "panel-body");
-  if (!body) return false;
-  body.children = [{ id: "preview", type: "block", content: { mod: "kanso-panel", props: { panel: "preview", path: file, on: machine } } }];
-  body.active = "preview";
-  (panel ?? body).hidden = false;
-  run("layout.set", { layout: tree });
-  return true;
+  if (!walkLayout(layout(), "panel-body")) return false;
+  const child = { id: "preview", type: "block", content: { mod: "kanso-panel", props: { panel: "preview", path: file, on: machine } } };
+  return commitLayout({ panel: child });
 }
 
 function shortPath(folder, machine) {
@@ -179,10 +252,16 @@ export default class OpenWith extends View {
     if (pairs.length) {
       try { await exec("sh", ["-c", ICON, "sh", `${appHome()}/${ICONS}`, ...pairs]); } catch {}
     }
-    for (const [id] of Object.entries(this.found ?? {})) {
+    const ids = Object.keys(this.found ?? {});
+    if (ids.length) {
       try {
-        const r = await exec("test", ["-f", `${appHome()}/${ICONS}/${id}.png`]);
-        if (r.code === 0) this.icons[id] = `${ICONS}/${id}.png`;
+        const script = `
+out=$1; shift
+for id in "$@"; do
+  [ -f "$out/$id.png" ] && printf '%s\\n' "$id"
+done`;
+        const r = await exec("sh", ["-c", script, "sh", `${appHome()}/${ICONS}`, ...ids]);
+        for (const id of r.stdout.split("\n").filter((id) => ids.includes(id))) this.icons[id] = `${ICONS}/${id}.png`;
       } catch {}
     }
   }
@@ -241,7 +320,11 @@ export default class OpenWith extends View {
   }
 
   spawn(cli, args) {
-    if (this.platform === "windows") return exec("cmd", ["/c", cli, ...args]);
+    if (this.platform === "windows") {
+      const commandLine = args.map(windowsArg).join(" ");
+      const script = `Start-Process -FilePath ${psQuote(cli)} -ArgumentList ${psQuote(commandLine)} -ErrorAction Stop`;
+      return exec("powershell", ["-NoProfile", "-NonInteractive", "-Command", script]);
+    }
     return exec("sh", ["-c", DETACH, "sh", cli, ...args]);
   }
 

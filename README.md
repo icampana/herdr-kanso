@@ -52,7 +52,8 @@ removes Kanso.
 
 ## What it runs
 
-The mods run `git` (the spaces list, Files, Changes), `sh` (the Files listing)
+The mods run `git` (the spaces list, Files, Changes), `find` (the Unix Files
+listing, with `bash` as its fallback)
 and `hc machine ls` (machines). They read files only inside the folders you
 work in. Only the PR panel reaches the network (GitHub, below).
 
@@ -70,7 +71,8 @@ icon as a PNG with `plutil` and `sips` under
 `~/.config/herdr-app/data/open-with/`.
 
 The PR panel (`kanso-panel`, the PR button in the tab bar) shows the open pull
-request of the focused pane's branch, as T3 Code does, in the Spend panel's
+request of the focused pane's branch, as T3 Code does, with your other open
+ones in that repository listed above it (a click shows one), in the Spend panel's
 style: whether it can merge, checks, unresolved threads and the files with
 their diff. You manage it there: assign it to yourself or others, ask for or
 take back reviews, put labels on and off (T3 Code's searchable pickers), mark
@@ -83,6 +85,17 @@ Specs (`sdd-focused`, from the minimalistic layout) and Insights are optional:
 install either mod and its button appears in the tab bar.
 
 How it is built, in enough detail to rebuild it: [kanso/RECIPE.md](kanso/RECIPE.md).
+
+Run the regression checks with `node --test tests/pr11-regressions.test.mjs`
+(Node.js, Git and Bash; macOS or Linux). They exercise the mod logic with an
+isolated host, real temporary Git repositories and file listings. Windows
+launch checks validate the generated command strings without launching an editor.
+
+On macOS, `node benchmarks/macos.mjs` compares the PR's base, its original
+head and the working tree using real directory listings and isolated native
+Herdr windows. It leaves measurements under `benchmarks/results/macos/`;
+`node benchmarks/summarize.mjs` produces the report. See the
+[measured results and limitations](benchmarks/results/macos/REPORT.md).
 
 ## License
 

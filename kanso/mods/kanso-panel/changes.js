@@ -5,7 +5,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
 import { exec, readTextFile, watchFolder, theme, settings } from "herdr";
-import { location, key, diffRows } from "./lib.js";
+import { location, key, diffRows, insideRoot } from "./lib.js";
 
 const countLines = (text) => text ? text.split("\n").length - Number(text.endsWith("\n")) : 0;
 
@@ -30,14 +30,27 @@ export class Changes {
       try {
         while (this.watched === root) {
           await watchFolder(root);
-          if (this.watched === root) this.refresh(cx);
+          if (this.watched === root) this.later(cx);
         }
       } catch { this.watched = null; }
     });
   }
 
+  // A save storm wakes the watch once per file. Fold that into one refresh.
+  later(cx) {
+    this.queued = true;
+    if (this.armed) return;
+    this.armed = cx.timer.after(400, (cx) => {
+      this.armed = null;
+      if (!this.queued) return;
+      if (this.loading || this.busy) { this.later(cx); return; }
+      this.queued = false;
+      this.refresh(cx);
+    });
+  }
+
   refresh(cx) {
-    if (this.loading || this.busy) return;
+    if (this.loading || this.busy) { this.later(cx); return; }
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
       this.context = context; this.root = null; this.files = []; this.open = null;
@@ -72,7 +85,7 @@ export class Changes {
           const conflict = xy.includes("U") || xy === "AA" || xy === "DD";
           const s = conflict ? "U" : xy.includes("D") ? "D" : fresh || xy.includes("A") ? "A" : "M";
           const stat = stats[path] ?? { add: 0, del: 0 };
-          files.push({ path, status: s, fresh, ...stat });
+          files.push({ path, status: s, fresh, stagedDeletion: xy === "D ", ...stat });
         }
         if (key() !== context) return;
         this.root = root; this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;
@@ -93,7 +106,8 @@ export class Changes {
     const file = this.files.find((f) => f.path === path), root = this.root, on = this.on;
     if (!file) return;
     let lines;
-    if (file.fresh || (!this.hasHead && file.status === "A")) {
+    if (!insideRoot(path)) lines = ["Cannot preview this file"];
+    else if (file.fresh || (!this.hasHead && file.status === "A")) {
       const text = await readTextFile(`${root}/${path}`, { on }).catch(() => null);
       if (text === null) lines = ["Cannot preview this file (binary, too large, or unreadable)"];
       else if (text.includes("\0")) lines = ["Binary file · no text diff"];
@@ -130,14 +144,28 @@ export class Changes {
   commit(cx) {
     if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== key()) return;
     const root = this.root, on = this.on, context = this.context, message = this.message.trim();
+    const files = this.files.filter((f) => insideRoot(f.path));
+    const paths = files.filter((f) => !f.stagedDeletion).map((f) => f.path);
+    const limited = this.limited;
+    if (!files.length) { this.note = "Nothing to commit"; return; }
     this.busy = true; this.note = null;
     cx.spawn(async (cx) => {
       try {
-        for (const args of [["add", "-A"], ["commit", "-m", message]]) {
+        // Only the files listed here. `git add -A` would also stage everything
+        // else in the worktree, including secrets that were never shown.
+        // A staged deletion is already absent from both disk and the index;
+        // adding it by path would fail. It still belongs in the commit.
+        const commands = paths.length ? [["--literal-pathspecs", "add", "-A", "--", ...paths]] : [];
+        commands.push(["commit", "-m", message]);
+        for (const args of commands) {
           const r = await exec("git", args, { cwd: root, on });
           if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
         }
-        if (key() === context) { this.message = ""; this.input.set_value(""); }
+        if (key() === context) {
+          this.message = "";
+          this.input.set_value("");
+          if (limited) this.note = "Committed the 1,000 files listed here.";
+        }
       } catch (e) { if (key() === context) this.note = `Commit failed: ${e}`; }
       finally { this.busy = false; this.refresh(cx); cx.notify(); }
     });

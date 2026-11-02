@@ -12,6 +12,83 @@ import { v_flex, h_flex, Popover } from "gpui-base";
 import { agentRow, agentFold, withTerminals, labelsOf, NAME_LABEL, PIN_LABEL, ORDERS, DEFAULT_ORDER, orderSessions, moved } from "./agents.js";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
+// Same helper as kanso-strip, kanso-tabs, kanso-panel and open-with.
+const LAYOUT_INTENT = "kanso.layout";
+// The strip writes its columns under their own key, many times a second, so
+// it never has to read back and copy the panel and rail to keep them.
+const STRIP_INTENT = "kanso.layout.strip";
+
+function walkLayout(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = walkLayout(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function paintLayout(tree, preserveSizes = true) {
+  if (!tree) return;
+  const intent = { ...(shared(LAYOUT_INTENT) ?? {}), ...(shared(STRIP_INTENT) ?? {}) };
+  if (intent.nodes) {
+    const body = walkLayout(tree, "work-body");
+    if (body?.children) {
+      const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
+      const at = body.children.findIndex(mine);
+      const rest = body.children.filter((n) => !mine(n));
+      const i = Math.max(0, at);
+      const nodes = JSON.parse(JSON.stringify(intent.nodes));
+      // Native dividers leave px sizes before the strip's adopt timer runs.
+      // Keep those edits, but not sizes from the tree a pending strip write
+      // was based on: replaying those would undo an explicit width command.
+      const keepSize = (node) => {
+        const before = intent.sizesBefore?.[node.id], live = walkLayout(body, node.id);
+        if (before !== undefined && live?.size?.px !== undefined
+          && JSON.stringify(live.size) !== JSON.stringify(before)) node.size = { ...live.size };
+        for (const child of node.children ?? []) keepSize(child);
+      };
+      if (preserveSizes) nodes.forEach(keepSize);
+      body.children = [...rest.slice(0, i), ...nodes, ...rest.slice(i)];
+    }
+  }
+  if ("panel" in intent) {
+    const body = walkLayout(tree, "panel-body");
+    const wrap = walkLayout(tree, "panel") ?? body;
+    if (body) {
+      const child = intent.panel ? JSON.parse(JSON.stringify(intent.panel)) : null;
+      body.children = child ? [child] : [];
+      if (child) body.active = child.id;
+      else delete body.active;
+      if (wrap) wrap.hidden = !child;
+    }
+  }
+  if (intent.rail) {
+    const sidebar = (tree.children ?? []).find((n) => n.id === "sidebar");
+    if (sidebar) {
+      tree.resizable = intent.rail.open;
+      sidebar.min = intent.rail.min;
+    }
+  }
+}
+
+function rememberLayout(patch) {
+  setShared(LAYOUT_INTENT, { ...(shared(LAYOUT_INTENT) ?? {}), ...patch });
+}
+
+function storedArray(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
+}
+
+function storedObject(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch { return {}; }
+}
+
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
 function place(s, ps) {
@@ -40,12 +117,13 @@ const OPEN_MIN = 200; // dragged open, the sidebar never gets narrower than this
 // edge drags between OPEN_MIN and 480. The root row owns that edge
 // (`resizable`), so both live in the layout; then the width is applied.
 function setRail(open, width) {
+  const min = open ? OPEN_MIN : collapsedW();
+  rememberLayout({ rail: { open, min } });
   const tree = layout();
   const sidebar = (tree?.children ?? []).find((n) => n.id === "sidebar");
   if (!sidebar) return;
-  if (tree.resizable !== open || sidebar.min !== (open ? OPEN_MIN : collapsedW())) {
-    tree.resizable = open;
-    sidebar.min = open ? OPEN_MIN : collapsedW();
+  if (tree.resizable !== open || sidebar.min !== min) {
+    paintLayout(tree);
     run("layout.set", { layout: tree });
   }
   run("layout.resize", { id: "sidebar", px: width });
@@ -76,11 +154,12 @@ export default class Spaces extends View {
     this.pressed = null;
     this.over = null;
     this.machines = [];
-    this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
-    this.agentsFolded = new Set(JSON.parse(localStorage.getItem("spaces.agentsFolded") ?? "[]"));
+    this.folded = new Set(storedArray("machines.folded"));
+    this.agentsFolded = new Set(storedArray("spaces.agentsFolded"));
     // How sessions are listed (ORDERS), and your own order per space.
-    this.order = localStorage.getItem("spaces.order") in ORDERS ? localStorage.getItem("spaces.order") : DEFAULT_ORDER;
-    this.custom = JSON.parse(localStorage.getItem("spaces.custom") ?? "{}");
+    const order = localStorage.getItem("spaces.order");
+    this.order = order in ORDERS ? order : DEFAULT_ORDER;
+    this.custom = storedObject("spaces.custom");
     this.orderOpen = false;
     this.hoverRow = null;
     this.migrate();
@@ -204,11 +283,11 @@ export default class Spaces extends View {
         return;
       }
       // The repo's own .git folder names it; a worktree's top differs from it.
-      const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
-      const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
-      const repo = common.stdout.trim();
+      const meta = await exec("git", ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"], { cwd, on });
+      if (meta.code !== 0) throw new Error(meta.stderr || "git rev-parse failed");
+      const [top, repo] = meta.stdout.trim().split(/\r?\n/).map((s) => s.trim());
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
-      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git` };
+      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top}/.git` };
       for (const line of r.stdout.split("\n")) {
         if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
         else if (line.startsWith("# branch.ab ")) {
@@ -246,8 +325,7 @@ export default class Spaces extends View {
   }
 
   // Spaces in order, each worktree space moved under its main checkout's.
-  ordered() {
-    const sp = spaces(), ps = panes();
+  ordered(sp, ps) {
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
     const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null })).filter((r) => this.shown.has(r.w.id));
@@ -372,10 +450,11 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   // A session's name is the terminal's `kanso.name` label when it has one
   // (a double-click on the row opens the rename dialog).
-  grouped(t, collapsed) {
-    const rows = this.ordered();
+  grouped(t, collapsed, sp, ps) {
+    const rows = this.ordered(sp, ps);
+    const live = machines();
     const labels = labelsOf();
-    const all = withTerminals(agents(), panes(), spaces()).map((a) => {
+    const all = withTerminals(agents(), ps, sp).map((a) => {
       const l = labels.get(a.address), pin = l?.[PIN_LABEL];
       return { ...a, name: l?.[NAME_LABEL] || undefined, pin: pin != null && pin !== "" && !Number.isNaN(Number(pin)) ? Number(pin) : null };
     });
@@ -387,9 +466,9 @@ export default class Spaces extends View {
     };
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name)])].sort();
     const loading = m => {
-      const layout = machines().find(k => k.name === m)?.layout;
-      return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
-        || rows.length < spaces().length && spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
+      const state = live.find(k => k.name === m)?.layout;
+      return state === "loading" || (!state && this.machines.some(k => k.name === m && k.state === "connected"))
+        || rows.length < sp.length && sp.some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => div().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(8).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
     if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : rows.flatMap(draw);
@@ -554,6 +633,7 @@ export default class Spaces extends View {
     const collapsed = shared("sidebar.collapsed") === true;
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
     const sp = spaces();
+    const ps = panes();
     const ids = new Set(sp.map(p => p.id));
     const stored = shared("space.colors") ?? {};
     const kept = Object.fromEntries(Object.entries(stored).filter(([id]) => ids.has(id)));
@@ -601,6 +681,6 @@ export default class Spaces extends View {
       .child(add)
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pt(collapsed ? 6 : 0).pb(14).overflow_y_scrollbar().mode(collapsed ? "hover" : "always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; this.draggedAgent = null; cx.notify(); })
-        .children(this.grouped(t, collapsed)));
+        .children(this.grouped(t, collapsed, sp, ps)));
   }
 }
