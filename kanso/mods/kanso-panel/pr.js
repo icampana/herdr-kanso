@@ -1,8 +1,8 @@
 // Kanso's pull request panel, by jlopezlira (https://github.com/jlopezlira/herdr-kanso). Apache-2.0.
 //
-// The open pull request of the focused pane's branch, or any of your open ones
-// in that repository (listed above it, a click shows one), read with the GitHub CLI
-// (`gh`), in the spirit of T3 Code's pull request view and drawn the way the
+// The open pull request of the focused pane's branch, or any other open one in
+// that repository, by anyone (listed above it, yours first; a click shows one),
+// read with the GitHub CLI (`gh`), in the spirit of T3 Code's pull request view and drawn the way the
 // Spend panel is: one centered column, no cards or uppercase labels, hierarchy
 // from type size, weight and tone, hairlines between rows, a breathing
 // silhouette while it loads.
@@ -28,9 +28,9 @@ const THREADS = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$
 // which, unlike `collaborators`, does not need push access to read.
 const PEOPLE = "query($o:String!,$r:String!){viewer{login} repository(owner:$o,name:$r){assignableUsers(first:100){pageInfo{hasNextPage} nodes{login name}}}}";
 const LABELS = "query($o:String!,$r:String!){repository(owner:$o,name:$r){labels(first:100,orderBy:{field:NAME,direction:ASC}){pageInfo{hasNextPage} nodes{name color description}}}}";
-// Yours, open, in this repository: the list a click picks from.
-const MINE = "number,title,headRefName,isDraft,updatedAt";
-const MINE_ROWS = 5;
+// Every open pull request of this repository, by anyone: the list a click picks from.
+const OPEN = "number,title,url,isDraft,updatedAt,author,headRefName";
+const OPEN_ROWS = 5;
 const MAX_DIFF = 400;
 const FILE_ROWS = 8;
 
@@ -83,7 +83,7 @@ function splitDiff(text) {
 
 // T3 Code's agent tasks, worded for a pull request reached through `gh`.
 const PROMPTS = {
-  explain: (pr) => `Explain pull request #${pr.number} (${pr.url}). Read the diff (\`gh pr diff ${pr.number}\`) and walk through its purpose, the changes, the risks, and what I should read closely before approving. Do not change any code.`,
+  explain: (pr) => `Explain pull request #${pr.number} (${pr.url}). Read the diff (\`gh pr diff ${pr.url}\`) and walk through its purpose, the changes, the risks, and what I should read closely before approving. Do not change any code.`,
   feedback: (pr) => `Address the actionable feedback and failing checks on pull request #${pr.number} (${pr.url}). Fetch the latest review threads and check results with \`gh\`, skip resolved feedback, and verify each finding before changing code. First confirm this checkout is on ${pr.headRefName}; if it isn't, prepare the branch in its own worktree. Keep the fixes focused and run the relevant checks.`,
   conflicts: (pr) => `Resolve the conflicts of pull request #${pr.number} (${pr.url}) with its base branch ${pr.baseRefName}. First confirm this checkout is on ${pr.headRefName}; if it isn't, prepare the branch in its own worktree. Bring it up to date using this repository's convention, preserve the intent of both sides, and run the relevant checks before pushing.`,
 };
@@ -103,8 +103,8 @@ function quietLink(id, label, onClick, c, options = {}) {
 export class PullRequest {
   init(cx) {
     this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
-    this.expanded = { checks: false, files: false, mine: false }; this.width = 368;
-    this.mine = []; this.selected = null; // null: the branch's own pull request
+    this.expanded = { checks: false, files: false, list: false }; this.width = 368;
+    this.openPrs = []; this.selected = null; // a pull request's URL; null: the branch's own
     this.picker = null; this.candidates = null; this.query = "";
     this.search = InputState.new({ placeholder: "Search" });
     this.search.on("change", (_e, cx) => { this.query = this.search.value(); cx.notify(); });
@@ -122,8 +122,14 @@ export class PullRequest {
     return (this.pr?.statusCheckRollup ?? []).map(checkOf).filter((ch) => !seen.has(ch.name) && seen.add(ch.name));
   }
 
-  gh(args) { return exec("gh", args, { cwd: this.root, on: this.on }); }
+  gh(args) { return exec("gh", args, { cwd: this.root ?? this.cwd, on: this.on }); }
   repo() { const m = /github\.com\/([^/]+)\/([^/]+)\/pull\//.exec(this.pr?.url ?? ""); return m ? { o: m[1], r: m[2] } : null; }
+  // Whether a pull request (its URL) belongs to the focused pane's repository.
+  local(url) {
+    if (url && url === this.branchUrl) return true; // the branch's own, even from a fork's checkout
+    const m = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url ?? "");
+    return Boolean(m && this.home && m[1].toLowerCase() === this.home.toLowerCase());
+  }
 
   refresh(cx) {
     if (this.loading) return;
@@ -131,30 +137,37 @@ export class PullRequest {
     if (context !== this.context) {
       this.context = context; this.root = null; this.branch = null; this.pr = null; this.threads = []; this.diffs = null;
       this.openFile = null; this.error = null; this.note = null; this.none = false; this.armed = null; this.picker = null;
-      this.mine = []; this.selected = null;
+      this.openPrs = []; this.selected = null; this.home = null; this.branchUrl = null; this.outside = false;
     }
     if (!cwd) return;
+    this.cwd = cwd; this.on = on;
     this.loading = true;
     const want = this.selected;
     cx.spawn(async (cx) => {
+      let list = null;
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
         if (key() !== context) return;
-        if (top.code !== 0) { this.error = { title: "Not a git repository", detail: "Focus a pane inside a repository to see its pull request." }; this.pr = null; return; }
-        this.root = top.stdout.trim(); this.on = on;
-        const branch = await exec("git", ["branch", "--show-current"], { cwd: this.root, on });
+        // Not a repository is a place, not a failure: a quiet placeholder, no retry.
+        if (top.code !== 0) { this.outside = true; this.error = null; this.none = false; this.pr = null; this.openPrs = []; return; }
+        this.outside = false;
+        this.root = top.stdout.trim();
+        const [branch, remote] = await Promise.all([
+          exec("git", ["branch", "--show-current"], { cwd: this.root, on }),
+          exec("git", ["remote", "get-url", "origin"], { cwd: this.root, on }).catch(() => null),
+        ]);
         this.branch = branch.stdout.trim() || null;
-        let view, mine;
-        try {
-          [view, mine] = await Promise.all([
-            this.gh(["pr", "view", ...(want ? [String(want)] : []), "--json", FIELDS]),
-            this.gh(["pr", "list", "--author", "@me", "--state", "open", "--limit", "50", "--json", MINE]).catch(() => null),
-          ]);
-        } catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
+        this.home = /github\.com[:/]([^/]+\/[^/\s]+?)(?:\.git)?\s*$/.exec(remote?.stdout ?? "")?.[1] ?? null;
+        // The repository's open ones, read alongside the one shown.
+        list = this.gh(["pr", "list", "--state", "open", "--limit", "100", "--json", OPEN]).catch(() => null);
+        let view;
+        try { view = await this.gh(["pr", "view", ...(want ? [want] : []), "--json", FIELDS]); }
+        catch { this.error = { title: "The GitHub CLI is not installed.", detail: "Install gh and run `gh auth login`." }; this.pr = null; return; }
         // A click picked another one while this read was out: drop it, the finally reads again.
         if (key() !== context || this.selected !== want) return;
-        if (mine?.code === 0) {
-          try { this.mine = JSON.parse(mine.stdout).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); } catch {}
+        const open = await list;
+        if (open?.code === 0 && key() === context) {
+          try { this.openPrs = JSON.parse(open.stdout).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); } catch {}
         }
         if (view.code !== 0) {
           const why = (view.stderr || view.stdout).trim();
@@ -163,8 +176,10 @@ export class PullRequest {
           return;
         }
         const pr = JSON.parse(view.stdout);
-        if (this.pr?.number !== pr.number) { this.diffs = null; this.openFile = null; }
+        if (this.pr?.url !== pr.url) { this.diffs = null; this.openFile = null; }
         this.pr = pr; this.none = false; this.error = null;
+        if (!want) this.branchUrl = pr.url;
+        if (!this.home && !want) this.home = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(pr.url)?.[1] ?? null;
         const repo = this.repo();
         if (repo) {
           const q = await this.gh(["api", "graphql", "-f", `query=${THREADS}`, "-F", `o=${repo.o}`, "-F", `r=${repo.r}`, "-F", `n=${pr.number}`]).catch(() => null);
@@ -182,16 +197,18 @@ export class PullRequest {
         }
       } catch (e) { if (key() === context) this.error = { title: "GitHub could not be read.", detail: String(e?.message ?? e) }; }
       finally {
+        await list; // never left running past the read it belongs to
         this.loading = false; this.loadedAt = Date.now(); cx.notify();
         if (this.selected !== want && key() === context) this.refresh(cx);
       }
     });
   }
 
-  // Shows another of your pull requests; the branch's own goes back to following the branch.
+  // Shows another of your pull requests, from any repository (by its URL);
+  // the branch's own goes back to following the branch.
   choose(p, cx) {
-    const next = p.headRefName === this.branch ? null : p.number;
-    if (this.pr?.number === p.number && this.selected === next) return;
+    const next = p.url === this.branchUrl ? null : p.url;
+    if (this.pr?.url === p.url && this.selected === next) return;
     this.selected = next; this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
     this.none = false; this.error = null; this.note = null; this.armed = null; this.picker = null;
     this.loadedAt = 0; this.refresh(cx); cx.notify();
@@ -219,10 +236,11 @@ export class PullRequest {
     this.busy = "Merge"; this.armed = null; this.note = null;
     cx.spawn(async (cx) => {
       try {
-        const repo = await this.gh(["repo", "view", "--json", "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed"]);
+        const { o, r: name } = this.repo();
+        const repo = await this.gh(["repo", "view", `${o}/${name}`, "--json", "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed"]);
         const allowed = repo.code === 0 ? JSON.parse(repo.stdout) : {};
         const method = allowed.squashMergeAllowed !== false ? "--squash" : allowed.mergeCommitAllowed ? "--merge" : "--rebase";
-        const r = await this.gh(["pr", "merge", String(pr.number), method]);
+        const r = await this.gh(["pr", "merge", pr.url, method]);
         if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n")[0]);
         notify({ title: `Merged #${pr.number}`, body: pr.title, level: "success" });
       } catch (e) { this.note = `Merge failed: ${String(e?.message ?? e)}`; }
@@ -251,7 +269,7 @@ export class PullRequest {
     knownAgents({ on }).then((list) => {
       const agent = list.find((a) => a.installed);
       if (!agent) throw new Error("no agent is installed");
-      run("tab.new", { name: `#${pr.number} ${TASK_NAMES[task]}`, space, folder: root, argv: agent.run, task: PROMPTS[task](pr) });
+      run("tab.new", { name: `#${pr.number} ${TASK_NAMES[task]}`, space, folder: root ?? this.cwd, argv: agent.run, task: PROMPTS[task](pr) });
     }).catch((e) => notify({ title: "Could not start the agent", body: String(e?.message ?? e), level: "error" }));
   }
 
@@ -365,26 +383,28 @@ export class PullRequest {
 
   // ---- drawing, as Spend draws ----
 
-  // Your open pull requests in this repository, newest first, the shown one in weight.
-  // Hidden when the only one is the one already shown.
+  // The repository's open pull requests, by anyone: yours first, then the newest,
+  // the shown one in weight. Hidden when the only one is the one shown.
   yours(c) {
-    const list = this.mine ?? [], shown = this.pr?.number;
-    if (!list.length || (list.length === 1 && list[0].number === shown)) return null;
-    const open = this.expanded.mine, rows = open ? list : list.slice(0, MINE_ROWS);
+    const shown = this.pr?.url, me = this.viewer;
+    const list = [...(this.openPrs ?? [])].sort((a, b) => Number(b.author?.login === me) - Number(a.author?.login === me));
+    if (!list.length || (list.length === 1 && list[0].url === shown)) return null;
+    const open = this.expanded.list, rows = open ? list : list.slice(0, OPEN_ROWS);
+    const mineCount = me ? list.filter((p) => p.author?.login === me).length : 0;
     return v_flex().w_full()
-      .child(this.section(c, "Your open pull requests", String(list.length)))
-      .children(rows.map((p, i) => Button.new(`pr-mine-${p.number}`).w_full().py(7).cursor_pointer()
+      .child(this.section(c, "Open pull requests", mineCount && mineCount < list.length ? `${list.length} · ${mineCount} yours` : String(list.length)))
+      .children(rows.map((p, i) => Button.new(`pr-open-${i}`).w_full().py(7).cursor_pointer()
         .when(i > 0, (el) => el.border_t(1).border_color(c.border))
         .hover((s) => s.opacity(0.75))
         .accessibility_label(`#${p.number} ${p.title}`)
         .on_click((_e, cx) => this.choose(p, cx))
         .child(h_flex().w_full().items_end().gap(G.md)
           .child(v_flex().flex_1().min_w(0).gap(2)
-            .child(div().truncate().text_size(13).text_color(c.text).when(p.number === shown, (e) => e.font_medium()).child(p.title))
+            .child(div().truncate().text_size(13).text_color(c.text).when(p.url === shown, (e) => e.font_medium()).child(p.title))
             .child(div().truncate().text_size(11).text_color(c.dim)
-              .child([`#${p.number}`, p.headRefName, p.headRefName === this.branch && "this branch", p.isDraft && "draft"].filter(Boolean).join(" · "))))
-          .child(div().flex_none().text_size(11).text_color(p.number === shown ? c.text : c.dim).child(p.number === shown ? "shown" : ago(p.updatedAt))))))
-      .when(list.length > MINE_ROWS, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-mine-more", open ? "Show fewer" : `Show ${list.length - MINE_ROWS} more`, (cx) => { this.expanded.mine = !open; cx.notify(); }, c))));
+              .child([`#${p.number}`, p.author?.login === me ? "yours" : p.author?.login, (p.url === this.branchUrl || p.headRefName === this.branch) && "this branch", p.isDraft && "draft"].filter(Boolean).join(" · "))))
+          .child(div().flex_none().text_size(11).text_color(p.url === shown ? c.text : c.dim).child(p.url === shown ? "shown" : ago(p.updatedAt))))))
+      .when(list.length > OPEN_ROWS, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-open-more", open ? "Show fewer" : `Show ${list.length - OPEN_ROWS} more`, (cx) => { this.expanded.list = !open; cx.notify(); }, c))));
   }
 
   iconButton(id, icon, tip, onClick, c, spin) {
@@ -467,7 +487,7 @@ export class PullRequest {
         .child(this.busy === "Merge" ? "Merging…" : arming ? "Press again to merge" : "Merge"));
     return v_flex().w_full().gap(G.xl)
       .child(v_flex().gap(G.xs)
-        .child(div().text_size(15).text_color(c.muted).child(`#${pr.number} · ${pr.headRefName} → ${pr.baseRefName}`))
+        .child(div().text_size(15).text_color(c.muted).child(`${this.local(pr.url) ? "" : `${this.repo()?.o}/${this.repo()?.r} `}#${pr.number} · ${pr.headRefName} → ${pr.baseRefName}`))
         .child(div().w_full().text_size(narrow ? 22 : 28).line_height(1.25).font_light().text_color(c.text).child(pr.title))
         .child(h_flex().pt(G.xs).gap(G.sm).items_center()
           .child(div().size(6).flex_none().rounded_full().bg(v.color).when(v.color === c.yellow, (el) => el.loop("opacity", { from: 0.35, to: 1, period: 2400 })))
@@ -480,10 +500,10 @@ export class PullRequest {
       .when(open, (el) => el.child(h_flex().w_full().flex_wrap().gap_x(G.lg).gap_y(G.sm).items_center()
         .child(primary)
         .child(pr.isDraft
-          ? quietLink("pr-ready", this.busy === "Ready" ? "Marking ready…" : "Ready for review", (cx) => this.act("Ready", ["pr", "ready", String(pr.number)], cx), c, { disabled: Boolean(this.busy) })
-          : quietLink("pr-draft", "Back to draft", (cx) => this.act("Draft", ["pr", "ready", String(pr.number), "--undo"], cx), c, { disabled: Boolean(this.busy) }))
-        .child(quietLink("pr-close", "Close", (cx) => this.act("Close", ["pr", "close", String(pr.number)], cx), c, { disabled: Boolean(this.busy) }))))
-      .when(pr.state === "CLOSED", (el) => el.child(h_flex().child(quietLink("pr-reopen", "Reopen", (cx) => this.act("Reopen", ["pr", "reopen", String(pr.number)], cx), c, { disabled: Boolean(this.busy) }))))
+          ? quietLink("pr-ready", this.busy === "Ready" ? "Marking ready…" : "Ready for review", (cx) => this.act("Ready", ["pr", "ready", pr.url], cx), c, { disabled: Boolean(this.busy) })
+          : quietLink("pr-draft", "Back to draft", (cx) => this.act("Draft", ["pr", "ready", pr.url, "--undo"], cx), c, { disabled: Boolean(this.busy) }))
+        .child(quietLink("pr-close", "Close", (cx) => this.act("Close", ["pr", "close", pr.url], cx), c, { disabled: Boolean(this.busy) }))))
+      .when(pr.state === "CLOSED", (el) => el.child(h_flex().child(quietLink("pr-reopen", "Reopen", (cx) => this.act("Reopen", ["pr", "reopen", pr.url], cx), c, { disabled: Boolean(this.busy) }))))
       .when(Boolean(this.note), (el) => el.child(div().text_size(12).text_color(c.red).child(this.note)));
   }
 
@@ -564,12 +584,14 @@ export class PullRequest {
   agent(c) {
     const pr = this.pr, open = pr.state === "OPEN";
     const conflicting = pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY";
+    // Fixing code needs a checkout of its repository; explaining reads it from GitHub.
+    const here = this.local(pr.url);
     return v_flex().w_full()
-      .child(this.section(c, "Ask your agent", "in a new tab"))
+      .child(this.section(c, "Ask your agent", here ? "in a new tab" : "another repository: explain only"))
       .child(h_flex().w_full().flex_wrap().gap_x(G.lg).gap_y(G.xs)
         .child(quietLink("pr-explain", "Explain it", () => this.agentTask("explain"), c, { size: 13, color: c.text }))
-        .child(quietLink("pr-feedback", "Address feedback", () => this.agentTask("feedback"), c, { size: 13, color: c.text, disabled: !open }))
-        .child(quietLink("pr-conflicts", "Resolve conflicts", () => this.agentTask("conflicts"), c, { size: 13, color: c.text, disabled: !(open && conflicting) })));
+        .child(quietLink("pr-feedback", "Address feedback", () => this.agentTask("feedback"), c, { size: 13, color: c.text, disabled: !open || !here }))
+        .child(quietLink("pr-conflicts", "Resolve conflicts", () => this.agentTask("conflicts"), c, { size: 13, color: c.text, disabled: !(open && conflicting && here) })));
   }
 
   diffView(c, path) {
@@ -588,13 +610,13 @@ export class PullRequest {
   pickFile(path, cx) {
     this.openFile = this.openFile === path ? null : path;
     if (this.openFile && !this.diffs && this.pr) {
-      const number = this.pr.number, context = this.context;
+      const url = this.pr.url, context = this.context;
       this.diffLoading = true;
       cx.spawn(async (cx) => {
         try {
-          const r = await this.gh(["pr", "diff", String(number), "--color", "never"]);
+          const r = await this.gh(["pr", "diff", url, "--color", "never"]);
           if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
-          if (this.context === context && this.pr?.number === number) this.diffs = splitDiff(r.stdout);
+          if (this.context === context && this.pr?.url === url) this.diffs = splitDiff(r.stdout);
         } catch (e) { this.note = `Could not read the diff: ${String(e?.message ?? e).split("\n")[0]}`; }
         finally { this.diffLoading = false; cx.notify(); }
       });
@@ -640,7 +662,8 @@ export class PullRequest {
         .child(this.agent(c))
         .child(this.files(c))
         .child(div().text_size(10.5).text_color(c.dim).child(`Read from GitHub with gh${this.loadedAt ? ` · updated ${clock(this.loadedAt)}` : ""}. It rereads every minute while shown, every 20 s while a check runs.`));
-    } else if (this.error) body = this.waiting(c, this.error.title, this.error.detail, quietLink("pr-retry", "Try again", (cx) => { this.loadedAt = 0; this.refresh(cx); }, c));
+    } else if (this.outside) body = this.waiting(c, "No repository here", "Focus a pane inside a git repository to see its pull requests.");
+    else if (this.error) body = this.waiting(c, this.error.title, this.error.detail, quietLink("pr-retry", "Try again", (cx) => { this.loadedAt = 0; this.refresh(cx); }, c));
     else if (this.none) body = this.waiting(c, `No pull request for ${this.branch ?? "this branch"}.`,
       this.note ?? "Push the branch, then open one on GitHub.",
       quietLink("pr-create", this.busy === "Create" ? "Opening GitHub…" : "Create it on GitHub", (cx) => this.createPr(cx), c, { size: 13, color: c.text, disabled: Boolean(this.busy) }));

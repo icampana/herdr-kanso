@@ -134,18 +134,21 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       told `files`, `changes` or `pr` (`props.panel`), `token-spend`
       (Insights) or `sdd-focused`.
       The PR panel (`kanso-panel` with `pr`) shows the open pull request of the focused
-      pane's branch, as T3 Code does, or another of your open ones, drawn like the Spend panel: one
+      pane's branch, as T3 Code does, or any other open one in that repository, drawn like the Spend panel: one
       centered column (max 1080, 16 px sides under 560 wide, else 32), no
       cards or uppercase labels, `canvas` behind, hierarchy from size, weight
       and tone, hairlines between list rows. Top to bottom:
       - Header: "Pull request" (17, 20 when wide) and two 26 icon buttons,
         refresh (spins while reading) and open on GitHub.
-      - Your open pull requests (`gh pr list --author @me`, open, in this
-        repository, newest first), unless the only one is the one shown:
-        the title (13, medium when shown) over `#n · branch`, "this branch"
-        and "draft" (11, dim), and at the right its age or "shown"; 5 shown,
-        "Show N more". A click shows that one; the branch's own goes back
-        to following the branch. Without one shown, the list sits below.
+      - Open pull requests (`gh pr list --state open`: this repository's, by
+        anyone; yours first, then newest), unless the only one is the one
+        shown. The note reads "N · M yours". A row: the title (13, medium when
+        shown) over `#n`, the author ("yours" for you), "this branch" and
+        "draft" (11, dim), and at the right its age or "shown"; 5 shown, "Show
+        N more". A click shows that one; the branch's own goes back to
+        following the branch. Every `gh pr` action names the pull request by
+        URL. With none shown (the branch has none, an error), the list sits
+        below.
       - Hero: `#n · head → base` (15, muted); the title (22, 28 wide, light,
         line height 1.25); a 6 dot and the verdict (15): ready to merge
         (green), checks failing, conflicts or changes requested (red),
@@ -184,7 +187,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       - Loading is the view's silhouette in `border` tone, breathing between
         35% and 80%. Without a PR: "No pull request for <branch>." and
         "Create it on GitHub" (the web form, once the branch has an
-        upstream). Errors read the same way, with "Try again".
+        upstream). Errors read the same way, with "Try again". Outside a git
+        repository it is a place, not a failure: "No repository here" in
+        `muted`, no retry.
   - **Status bar**, 26 tall: `kanso-status` with `{side: "left"}`, a
     180-wide minimap (`kanso-strip`) exactly in the middle, and
     `kanso-status` with `{side: "right"}`. The minimap is a centred row of

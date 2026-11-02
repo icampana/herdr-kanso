@@ -71,8 +71,9 @@ icon as a PNG with `plutil` and `sips` under
 `~/.config/herdr-app/data/open-with/`.
 
 The PR panel (`kanso-panel`, the PR button in the tab bar) shows the open pull
-request of the focused pane's branch, as T3 Code does, with your other open
-ones in that repository listed above it (a click shows one), in the Spend panel's
+request of the focused pane's branch, as T3 Code does, with every other open
+one in that repository, by anyone, listed above it (yours first; a click
+shows one), in the Spend panel's
 style: whether it can merge, checks, unresolved threads and the files with
 their diff. You manage it there: assign it to yourself or others, ask for or
 take back reviews, put labels on and off (T3 Code's searchable pickers), mark
