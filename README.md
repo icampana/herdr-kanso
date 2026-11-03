@@ -109,6 +109,12 @@ by day, week, month or year:
 - when in the day you ship, and from which machine;
 - every repository you shipped to.
 
+**Share** turns it into an image to post on X, LinkedIn or Bluesky. The image
+has only the global numbers, never the names of your repositories or machines.
+It is copied for you to paste into the post, and the post's text is already
+written. Chrome, Chromium, Brave or Edge draws it (or `rsvg-convert`, or
+QuickLook on macOS).
+
 Your machines fill in what GitHub can't see. Each one reads its own git: every
 branch, every identity you commit with, even an email GitHub can't link to
 you. They share what they read through a private gist, and Shipped keeps only

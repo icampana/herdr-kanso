@@ -19,8 +19,9 @@
 // One of the kanso-panel mod's panels: it exists only while shown.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
-import { exec, theme, shared, setShared, notify } from "herdr";
+import { exec, appHome, theme, shared, setShared, notify } from "herdr";
 import { Store } from "./shipped-store.js";
+import { NETWORKS, cardSvg, shareText, renderPng, copyImage, openPath, outputPath } from "./shipped-card.js";
 
 const ICON = "mods/kanso-chrome/icons/";
 const G = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
@@ -234,6 +235,15 @@ export const REPOS = `query($after:String,$own:String){viewer{databaseId
 contributed:repositoriesContributedTo(first:100,after:$after,includeUserRepositories:true,contributionTypes:[COMMIT,PULL_REQUEST,PULL_REQUEST_REVIEW,REPOSITORY]){pageInfo{hasNextPage endCursor} nodes{nameWithOwner pushedAt}}
 access:repositories(first:100,after:$own,affiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER],ownerAffiliations:[OWNER,COLLABORATOR,ORGANIZATION_MEMBER],orderBy:{field:PUSHED_AT,direction:DESC}){pageInfo{hasNextPage endCursor} nodes{nameWithOwner pushedAt}}}}`;
 
+// "most at 23:00 · 38% after 9 pm"
+export function rhythmNote(hours) {
+  const total = hours.reduce((a, b) => a + b, 0);
+  if (!total) return "";
+  const peak = hours.indexOf(Math.max(...hours));
+  const late = hours.slice(21).reduce((a, b) => a + b, 0) + hours.slice(0, 5).reduce((a, b) => a + b, 0);
+  return [`most at ${String(peak).padStart(2, "0")}:00`, late ? `${Math.round((late / total) * 100)}% after 9 pm` : ""].filter(Boolean).join(" · ");
+}
+
 async function gh(args) {
   const r = await exec("gh", args);
   if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split("\n")[0] || "GitHub could not be read.");
@@ -408,6 +418,59 @@ export class Shipped {
     }
   }
 
+  // ---- sharing ----
+
+  // The card's data: the summary plus the streak, the calendar, the records
+  // and the hours. Never a repository or machine name.
+  cardData() {
+    const { current, longest } = streaks(this.days, isoDay(new Date()));
+    const records = Object.keys(RECORD_NAMES).filter((k) => this.records[k]).map((k) => ({ name: RECORD_NAMES[k], ...recordText(k, this.records[k]) }));
+    const r = this.rhythm[this.key()];
+    return { streak: current, longest: longest.n, weeks: this.weeks ?? [], records, rhythm: r ? { hours: r.hours, note: rhythmNote(r.hours) } : null };
+  }
+
+  // Makes the image, then posts it to a network (copied, to paste into its
+  // composer) or, with no network, saves it and opens it.
+  share(network, cx) {
+    if (this.sharingBusy) return;
+    this.sharingBusy = network ?? "save"; cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const s = this.summary(), extra = this.cardData();
+        const t = theme(), c = { ...tokens(t), border: t.border ?? t.dim };
+        const card = cardSvg(s, extra, c);
+        const png = await outputPath(s.period);
+        await exec("mkdir", ["-p", `${appHome()}/data/kanso-panel`]);
+        await renderPng(card, `${appHome()}/data/kanso-panel/share.svg`, png);
+        if (!network) {
+          await openPath(png);
+          notify({ title: "Shipped image saved", body: png.replace(/^.*\/(Downloads\/)?/, (m, d) => (d ? "Downloads/" : "")), level: "success" });
+        } else {
+          const copied = await copyImage(png);
+          await openPath(NETWORKS[network].url(shareText(s, extra)));
+          notify({ title: copied ? `Image copied: paste it into your ${NETWORKS[network].name} post` : `Attach ${png.split("/").pop()} to your ${NETWORKS[network].name} post`, body: png, level: "success" });
+          if (!copied) await openPath(png.replace(/\/[^/]+$/, ""));
+        }
+        this.shareOpen = false;
+      } catch (e) {
+        notify({ title: "The image could not be made", body: String(e?.message ?? e), level: "error" });
+      } finally { this.sharingBusy = null; cx.notify(); }
+    });
+  }
+
+  shareRow(c) {
+    const choice = (id, label, network) => Button.new(`shipped-share-${id}`).h(26).px(10).flex_none().items_center().rounded(6).cursor_pointer()
+      .border_1().border_color(c.border).hover((s) => s.bg(c.subtle))
+      .accessibility_label(label)
+      .on_click((_e, cx) => this.share(network, cx))
+      .child(div().text_size(12).text_color(this.sharingBusy === (network ?? "save") ? c.muted : c.text).child(this.sharingBusy === (network ?? "save") ? "Making the image…" : label));
+    return h_flex().w_full().flex_wrap().gap(G.sm).items_center()
+      .child(div().text_size(12).text_color(c.dim).child("Share to"))
+      .children(Object.entries(NETWORKS).map(([id, n]) => choice(id, n.name, id)))
+      .child(choice("save", "Save image", null))
+      .child(div().w_full().text_size(11).text_color(c.dim).child("Only the totals, streak, records and hours: no repository or machine names. The image is copied for you to paste into the post."));
+  }
+
   // ---- drawing, as Spend draws ----
 
   iconButton(id, icon, tip, onClick, c, options = {}) {
@@ -441,7 +504,8 @@ export class Shipped {
         .child(this.iconButton("shipped-next", "chevron-right", "Next period", (cx) => this.pick(this.kind, this.offset + 1, cx), c, { disabled: this.offset >= 0 })));
   }
 
-  hero(c, narrow) {
+  // The shown period in numbers, for the hero and the share card.
+  summary() {
     const now = Date.now();
     const cur = periodRange(this.kind, this.offset, now), prev = comparedRange(this.kind, this.offset, now);
     // A running week compares with the whole last one: its sum can't be cut.
@@ -456,7 +520,7 @@ export class Shipped {
     const settled = byDay || !(this.syncing && this.firstRead);
     const delta = settled && value !== null && value !== undefined && was > 0 ? Math.round(((value - was) / was) * 100) : null;
     // Past double, a multiple reads better than a four-digit percentage.
-    const deltaText = delta === null ? "" : delta >= 200 ? `${fmt(value / was)}x` : `${delta >= 0 ? "+" : ""}${delta}%`;
+    const deltaText = delta === null ? "" : `${delta >= 200 ? `${fmt(value / was)}x` : `${delta >= 0 ? "+" : ""}${delta}%`} ${comparedLabel(this.kind, this.offset)}`;
     const when = periodLabel(this.kind, this.offset).toLowerCase();
     const stats = [
       byDay ? null : { value: contributions === null ? "—" : fmt(contributions), unit: "contributions" },
@@ -466,27 +530,37 @@ export class Shipped {
       byDay ? null : { value: sums ? fmt(sums.byRepo.length) : "—", unit: sums?.byRepo.length === 1 ? "repository" : "repositories" },
     ].filter(Boolean);
     const ever = this.stats ? sumWeeks(this.stats, 0, Infinity) : null;
+    const everText = gh?.ever ? [
+      `${fmt(gh.ever.issueCount)} pull requests merged`,
+      ever?.add ? `+${fmt(ever.add)} lines and ${fmt(ever.commits)} commits in ${fmt(ever.byRepo.length)} repositories` : "",
+    ].filter(Boolean).join(", ") + `${v?.createdAt ? ` since you joined GitHub in ${new Date(v.createdAt).getFullYear()}` : ""}.` : "";
+    return {
+      login: v?.login ?? this.login ?? null, period: periodLabel(this.kind, this.offset), byDay, settled,
+      big: value === null || value === undefined ? null : byDay ? fmt(value) : `+${fmt(value)}`,
+      small: !byDay && sums ? `−${fmt(sums.del)}` : "",
+      label: byDay ? `contributions, ${when}` : `lines shipped, ${when}`,
+      delta, deltaText, stats, everText, error: gh?.error ?? null,
+    };
+  }
+
+  hero(c, narrow) {
+    const s = this.summary();
     return v_flex().w_full().gap(G.lg)
       .child(v_flex().w_full().gap(G.xs)
         .child(h_flex().w_full().flex_wrap().items_end().gap_x(G.md).gap_y(G.xs)
-          .child(div().text_size(narrow ? 40 : 56).line_height(1).font_light().text_color(c.text)
-            .child(value === null || value === undefined ? "…" : byDay ? fmt(value) : `+${fmt(value)}`))
-          .when(!byDay && Boolean(sums), (el) => el.child(div().pb(6).text_size(narrow ? 18 : 22).line_height(1).font_light().text_color(c.muted).child(`−${fmt(sums.del)}`))))
+          .child(div().text_size(narrow ? 40 : 56).line_height(1).font_light().text_color(c.text).child(s.big ?? "…"))
+          .when(Boolean(s.small), (el) => el.child(div().pb(6).text_size(narrow ? 18 : 22).line_height(1).font_light().text_color(c.muted).child(s.small))))
         .child(h_flex().w_full().flex_wrap().gap_x(G.sm).gap_y(2).items_center()
-          .child(div().text_size(13).text_color(c.muted).child(byDay ? `contributions, ${when}` : `lines shipped, ${when}${settled ? "" : ", still adding up"}`))
-          .when(delta !== null, (el) => el.child(h_flex().gap(6).items_center()
-            .child(div().size(6).rounded_full().bg(delta >= 0 ? c.green : c.red))
-            .child(div().text_size(13).text_color(delta >= 0 ? c.green : c.red).child(`${deltaText} ${comparedLabel(this.kind, this.offset)}`))))))
+          .child(div().text_size(13).text_color(c.muted).child(`${s.label}${s.settled ? "" : ", still adding up"}`))
+          .when(s.delta !== null, (el) => el.child(h_flex().gap(6).items_center()
+            .child(div().size(6).rounded_full().bg(s.delta >= 0 ? c.green : c.red))
+            .child(div().text_size(13).text_color(s.delta >= 0 ? c.green : c.red).child(s.deltaText))))))
       .child(h_flex().w_full().flex_wrap().gap_x(narrow ? G.lg : 32).gap_y(G.lg)
-        .children(stats.map((s) => v_flex().gap(4).min_w(64)
-          .child(div().text_size(narrow ? 22 : 28).line_height(1).font_light().text_color(c.text).child(s.value))
-          .child(div().text_size(11).text_color(c.dim).child(s.unit)))))
-      .when(Boolean(gh?.ever), (el) => el.child(div().text_size(12).text_color(c.muted)
-        .child([
-          `${fmt(gh.ever.issueCount)} pull requests merged`,
-          ever?.add ? `+${fmt(ever.add)} lines and ${fmt(ever.commits)} commits in ${fmt(ever.byRepo.length)} repositories` : "",
-        ].filter(Boolean).join(", ") + `${v?.createdAt ? ` since you joined GitHub in ${new Date(v.createdAt).getFullYear()}` : ""}.`)))
-      .when(Boolean(gh?.error), (el) => el.child(div().text_size(12).text_color(c.red).child(gh.error)));
+        .children(s.stats.map((x) => v_flex().gap(4).min_w(64)
+          .child(div().text_size(narrow ? 22 : 28).line_height(1).font_light().text_color(c.text).child(x.value))
+          .child(div().text_size(11).text_color(c.dim).child(x.unit)))))
+      .when(Boolean(s.everText), (el) => el.child(div().text_size(12).text_color(c.muted).child(s.everText)))
+      .when(Boolean(s.error), (el) => el.child(div().text_size(12).text_color(c.red).child(s.error)));
   }
 
   // The current streak, then as many weeks of the calendar as fit, its
@@ -569,10 +643,8 @@ export class Shipped {
     const r = this.rhythm[this.key()];
     const total = r ? r.hours.reduce((a, b) => a + b, 0) : 0;
     if (!total) return null;
-    const top = Math.max(...r.hours), peak = r.hours.indexOf(top);
-    const late = r.hours.slice(21).reduce((a, b) => a + b, 0) + r.hours.slice(0, 5).reduce((a, b) => a + b, 0);
+    const top = Math.max(...r.hours), peak = r.hours.indexOf(top), note = rhythmNote(r.hours);
     const hour = (h) => `${String(h).padStart(2, "0")}:00`;
-    const note = [`most at ${hour(peak)}`, late ? `${Math.round((late / total) * 100)}% after 9 pm` : ""].filter(Boolean).join(" · ");
     return v_flex().w_full().gap(G.md)
       .child(this.section(c, "When you ship", note))
       .child(h_flex().w_full().h(56).items_end().gap(2).children(r.hours.map((n, h) => div().id(`hour-${h}`).flex_1().min_w(2)
@@ -609,7 +681,10 @@ export class Shipped {
         .child(v_flex().w_full().max_w(1080).gap(narrow ? 32 : 44)
           .child(h_flex().w_full().items_center().justify_between().gap(G.md)
             .child(div().truncate().text_size(narrow ? 17 : 20).text_color(c.text).child("Shipped"))
-            .child(this.iconButton("shipped-refresh", "refresh", "Refresh", (cx) => this.refresh(cx, true), c, { spin: this.loading || this.syncing })))
+            .child(h_flex().gap(G.xs).items_center()
+              .child(this.iconButton("shipped-share", "share", "Share", (cx) => { this.shareOpen = !this.shareOpen; cx.notify(); }, c, { disabled: !this.days }))
+              .child(this.iconButton("shipped-refresh", "refresh", "Refresh", (cx) => this.refresh(cx, true), c, { spin: this.loading || this.syncing }))))
+          .when(Boolean(this.shareOpen), (el) => el.child(this.shareRow(c)))
           .child(this.periods(c))
           .child(body)));
   }

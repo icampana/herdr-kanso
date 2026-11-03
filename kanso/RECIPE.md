@@ -152,7 +152,20 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       (Insights) or `sdd-focused`.
       The Shipped panel (`kanso-panel` with `shipped`) is vanity metrics on
       purpose, drawn like Spend. It has:
-      - a header: "Shipped" (20) and a refresh icon;
+      - a header: "Shipped" (20), a share icon and a refresh icon. Share
+        opens a row: "Share to" X, LinkedIn, Bluesky, and "Save image"
+        (outlined buttons, 26 tall), with a `dim` note under it.
+        `shipped-card.js` draws a 1200-wide SVG card: the header with
+        @login and the period, the hero, the numbers three to a row, the
+        totals, the streak with 53 columns of the calendar, the records,
+        and when you ship. It has no repository or machine names. The SVG
+        becomes a PNG at 2x through the first renderer found: a Chromium
+        browser headless (`--screenshot`), `rsvg-convert`, `magick`, or
+        QuickLook on macOS. The PNG is saved to `~/Downloads`. For a
+        network, the image is copied (`osascript` on macOS; `wl-copy` or
+        `xclip` on Linux) and the composer opens with the text filled in.
+        The text is the big numbers and the streak plus the repository
+        link, at most 280 characters.
       - Day, Week, Month and Year tabs (26 tall, a `selected` wash on the
         active one), with previous and next arrows around the period's name
         ("This week", "Last week", "19 Oct – 25 Oct"). Next stops at now.

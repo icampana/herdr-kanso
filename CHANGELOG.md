@@ -8,6 +8,12 @@ minor version, anything else is a patch. The format follows
 checks all of this, and merging to main releases the version in
 `kanso/mods/kanso-chrome/version.json`, which is what the updater offers.
 
+## [1.4.0] - 2026-11-03
+
+### Added
+
+- Shipped: Share to X, LinkedIn or Bluesky, or save the image. It makes a PNG of the global numbers only: the totals, the streak with a year of contributions, the records and when you ship. No repository or machine names. It copies the image to paste into the post, and opens the composer with the words filled in, because these networks take only text from a link (#31).
+
 ## [1.3.1] - 2026-11-03
 
 ### Changed
