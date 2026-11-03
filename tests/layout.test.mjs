@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clone, load } from "./helpers.mjs";
+import { clone, context, load } from "./helpers.mjs";
 
 async function layoutFixture() {
   const nodes = [{ id: "strip-col-a", type: "column", size: { weight: 1 }, children: [
@@ -138,6 +138,18 @@ test("The strip's fixed height ruler stands at the row's start, never beside the
   const ids = strip.build(st, [{ pane: "a", terminal: "ta" }, { pane: "b", terminal: "tb" }]).map((n) => n.id);
   assert.equal(ids[0], "strip-ruler-h");
   assert.notEqual(ids.at(-1), "strip-ruler-h");
+});
+
+test("kanso-tabs offers Specs and Insights only when readTextFile finds their main.js", async () => {
+  const { Tabs } = await load("kanso-tabs/main.js", ["Tabs"], {
+    appHome: () => "/home/.config/herdr-app",
+    readTextFile: async (path) => (path.endsWith("/token-spend/main.js") ? "export default class {}" : null),
+  });
+  const tabs = new Tabs();
+  const { cx, drain } = context();
+  tabs.init({}, cx);
+  await drain();
+  assert.deepEqual(clone(tabs.installed), { insights: true });
 });
 
 // Parse a single PowerShell literal independently of the production escaper.

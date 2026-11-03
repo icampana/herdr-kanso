@@ -152,7 +152,7 @@ export default class Tabs extends View {
     // Specs and Insights are separate mods: offer each only where it is installed.
     this.installed = {};
     for (const id of ["specs", "insights"]) cx.spawn(async (cx) => {
-      try { await readTextFile(`${appHome()}/mods/${PANELS[id].mod}/main.js`); this.installed[id] = true; cx.notify(); } catch {}
+      try { if ((await readTextFile(`${appHome()}/mods/${PANELS[id].mod}/main.js`)) !== null) { this.installed[id] = true; cx.notify(); } } catch {}
     });
   }
 
