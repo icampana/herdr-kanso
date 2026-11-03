@@ -1,7 +1,7 @@
 {
   "name": "herdr-kanso",
   "private": true,
-  "description": "Kanso: a calm, fast Herdr layout for working with many coding agents.",
+  "description": "Kanso: your agents in a row, not a grid. A Herdr layout with PR review and your editor one key away.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": { "node": ">=20" },

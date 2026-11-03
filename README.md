@@ -1,47 +1,148 @@
 # Kanso
 
-**A calm, fast layout for [Herdr](https://herdr.dev), made for working with
-many coding agents at once.**
+**Your agents in a row, not a grid.**
+
+Kanso is a layout for [Herdr](https://herdr.dev) made for running many coding
+agents and still reading everything they write. Every terminal keeps its width
+on a strip you slide along. The diff, the pull request and your editor sit
+beside them.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/hero-light.png">
-  <img alt="Kanso: three repositories in the sidebar, two agents side by side (one working, one waiting for your answer) and the pull request panel" src="kanso/preview.png">
+  <img alt="Kanso: seven demo agents across three repositories and a nested worktree. A pinned worker, a review waiting for a decision, and a server stacked above a test agent." src="kanso/preview.png">
 </picture>
 
-Kanso is the Japanese principle of simplicity: remove what is not needed.
-Everything on screen is there because you need it now, and nothing you are not
-looking at keeps running.
+> **Install:** tell your agent **`add herdr.dev/layouts/jlopezlira/kanso`**
+>
+> [Manual install](#install) · [Keys](#keys) · [What it runs](#privacy-what-it-runs)
 
 ## Why Kanso
 
-- **See which agent needs you, at a glance.** No outlines, no decoration, warm
-  stone greys. Color appears only when an agent's state matters (working,
-  needs you, finished), so the one waiting for you is the one thing that
-  stands out.
-- **Panes never shrink.** Panes sit on an endless horizontal strip. A new pane
-  opens beside the one you are in, at its own width, and the view slides to
-  it. Pick how many fit the view (1 to 8); a slim rail at the edge shows what
-  lies beyond, and a minimap shows where you are.
+- **Read every agent.** Terminals sit on a horizontal strip and keep their
+  width. A new pane opens beside the one you are in and the view glides to it.
+  Nothing gets squeezed into a grid.
+- **Review without leaving.** Files, Changes and pull requests open beside your
+  agents: diffs, CI, unresolved threads, merge. One click starts an agent on a
+  pull request's feedback.
+- **Take over in one key.** Cmd+Shift+O opens the agent's folder, its worktree
+  included, in Cursor, VS Code, Zed, or Neovim in a split.
+- **Light on your machine.** Panels exist only while open, and the Files tree
+  draws only the rows you can see. [Measured](benchmarks/README.md): 78% less
+  CPU on a 500-row tree.
 
-  ![Three panes on the strip: an agent at work, an agent waiting for you, and a dev server](docs/screenshots/strip.png)
-- **Review the work without leaving.** Side panels for **Files** (with
-  Markdown and code preview), **Changes** (diffs and a commit) and **Pull
-  requests**: every open one in the repository, with checks, unresolved
-  threads, reviewers, labels and merge, and one click to ask your agent to
-  explain a pull request, address its feedback or resolve its conflicts.
+What you need: the Herdr app, and the GitHub CLI (`gh`) for the pull request
+panel. Spend and Specs are optional integrations, not part of Kanso.
 
-  ![The Changes panel beside two agents: the files a branch changed and their diff](docs/screenshots/changes.png)
-- **Light on your machine.** Side panels exist only while open, background
-  checks slow down when the window is behind others, and the Files tree draws
-  only the rows on screen: 78% less CPU on a 500-row tree, and a 50,000-file
-  folder listed in 75 ms. [See the benchmarks](benchmarks/README.md).
-- **Your editor, one key away.** Cmd+Shift+O opens the pane's folder (or a
-  file from the Files panel) in Cursor, VS Code, Zed, Windsurf, Sublime Text,
-  a JetBrains IDE, Xcode, or Neovim, Helix and Vim in a split.
-- **Keyboard first, mouse friendly.** Every move has a key; panes also drag,
-  resize and pin with the mouse.
+## The tour
 
-The repositories, agents and pull requests in these screenshots are a demo.
+### Every terminal keeps its width
+
+Panes live on an endless horizontal canvas. Pick **1 to 8 columns per view**,
+resize them, and move through the work without squeezing every terminal onto one
+screen. **Pin a column** to keep it in view while the rest slides. **Stack
+panes** to keep a server, tests or a second agent beside the task. A rail at
+the edge shows what is off screen, and a minimap keeps your place.
+
+![A pinned worker stays in view while the canvas shows a dev server and a test agent.](docs/screenshots/strip.png)
+
+<details>
+<summary>See pinning, navigation and stacking in three captured states</summary>
+
+![Three demo states: pin the worker, navigate to other panes, then stack server and tests.](docs/screenshots/canvas.gif)
+
+These are native app captures with edited timing, not a frame-rate demonstration.
+
+</details>
+
+### Turn review feedback into the next task
+
+Browse **every open pull request** in the repository. Read the description and
+diff, check CI and unresolved threads, manage reviewers and labels, and merge
+from the panel. Then **ask your agent** to explain the pull request, address its
+feedback or resolve its conflicts. The task opens in a new tab with the context
+already in the prompt.
+
+![A pull request's summary and reviewers beside its checks, an unresolved comment, the Ask your agent actions and the task text for Address feedback.](docs/screenshots/pull-requests.png)
+
+### The agent's work, your editor
+
+**Open with** (Cmd+Shift+O, or the pane header's button) opens the focused
+agent's current folder, its Git worktree included, in your editor. You land in
+the workspace the agent is actually using. From **Files** or a file preview it
+opens that file instead.
+
+The picker detects your installed editors and puts recent choices first. Choose
+with **1 to 9**, the arrow keys or Enter. Cursor, VS Code, Zed, Windsurf,
+Antigravity, Kiro, Sublime Text, JetBrains IDEs and Xcode open as apps;
+**Neovim, Helix and Vim open in a split** beside the agent. Remote workspaces
+open over SSH in compatible VS Code-family editors and Zed. A text file can also
+be previewed in the panel, with no editor at all.
+
+![Open with: the native editor picker and shortcuts for opening the agent's workspace in a desktop editor or terminal split.](docs/screenshots/open-with.png)
+
+<details>
+<summary>See a rendered document beside the editor picker</summary>
+
+![A rendered Markdown document beside the native editor picker with Cursor, Xcode, Neovim and Vim.](docs/screenshots/files-editors.png)
+
+</details>
+
+### Read the diff, make the commit
+
+The **Changes** panel puts changed files, inline diffs and a commit message next
+to your agents while they keep working. The **Files** panel previews code and
+renders Markdown, including code blocks and checklists.
+
+![A real Git diff and the native commit message field in Kanso's Changes panel.](docs/screenshots/changes.png)
+
+### Every repo and worktree, one sidebar
+
+Repositories and their **nested Git worktrees** sit together, each with its
+branch and sessions: agents, shells and dev servers. Group work by local or
+remote machine. Order sessions by **Needs you first**, last update, kind, screen
+position or your own drag order. Pin the important ones and rename anything.
+
+![Kanso's native Needs you first ordering beside a review agent asking for a decision.](docs/screenshots/attention.png)
+
+### Light on your machine
+
+Side panels are mounted only while open. Background Git checks slow down when
+the window is behind others. The Files tree draws only the visible rows, and the
+canvas avoids rendering off-screen panes.
+
+On an Apple M4 with Herdr 0.1.11, against Kanso before its performance work:
+**78% less CPU for a 500-row Files tree** and **74.7 ms to list a 50,000-file
+folder**. These are targeted measurements, not whole-app or battery-life claims.
+[Benchmark conditions and results](benchmarks/README.md).
+
+![Measured on an Apple M4: 78% less CPU drawing a 500-row Files tree, 74.7 ms to list 50,000 files, and 52% less time for 1,000 strip layout updates.](docs/screenshots/performance.png)
+
+### Keyboard first, mouse friendly
+
+Every move has a key, and panes also drag, resize and pin with the mouse.
+[All shortcuts and gestures](#keys).
+
+![Keyboard shortcuts and mouse gestures: pin, stack, move panes, open with your editor, resize and rename.](docs/screenshots/keys.png)
+
+### Light and dark
+
+Kanso ships two themes: `kanso` (dark) and `kanso-day` (light), in warm stone
+greys with color only where it helps you act.
+
+<details>
+<summary>See Kanso Day</summary>
+
+![The same multi-agent workspace in Kanso Day, with a pinned worker and stacked panes.](docs/screenshots/hero-light.png)
+
+</details>
+
+The images use native Herdr captures with staged repositories, terminal output
+and pull request data. Spend and Specs, visible in the tab bar, are optional
+integrations.
+
+Kanso is the Japanese principle of simplicity: remove what is not needed. If it
+saves you time, [a star](https://github.com/jlopezlira/herdr-kanso) helps other
+Herdr users find it.
 
 ## Install
 

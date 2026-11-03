@@ -1,14 +1,14 @@
 # Kanso
 
-Kanso is a quiet Herdr layout for long days with coding agents. Warm stone
-greys, no decoration: the selected pane's header is a shade lighter, its
-title the only text in full ink and its edge a fine accent line, and color appears only when
-an agent's state matters (working, needs you, finished). Its second idea is that nothing you aren't looking at runs:
-side panels exist only while open, and background checks slow down when the
-window is behind others. Its third is an endless strip of panes: a new pane
-opens beside the focused one at its own
-width, nothing shrinks, and the view slides to it. The name is the Japanese
-principle of simplicity, removing what is not needed.
+Your agents in a row, not a grid. Kanso puts terminals on a horizontal strip:
+a new agent opens beside the one you're in, at its own width, and the view
+slides to it. Nothing gets squeezed, so you can read what each one is doing.
+Next to them: your repos and worktrees, the diff, the pull request with its CI
+and open threads, an agent started on a PR's feedback in one click, and one key
+(Cmd+Shift+O) to open the folder in Cursor, VS Code, Zed or Neovim, over SSH
+too. Warm stone greys in light and dark; color only when an agent's state
+matters. The name is the Japanese principle of simplicity, removing what is not
+needed.
 
 ![Kanso](preview.png)
 
