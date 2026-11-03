@@ -51,6 +51,18 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       name's first letter, then the name and "N agents".
     - Collapsed, each item is a centred square with its label as a tooltip.
       When an app update is ready, a 6 `accent` dot shows on Settings.
+    - Kanso's own release, apart from Herdr's (`update.js`): when a newer
+      `vX.Y.Z` tag than `version.json` exists, an "Update Kanso to X" row
+      (refresh icon, 6 `accent` dot) sits above Settings and the footer
+      grows to 192 while it shows (back to 156 after; a size you set is kept).
+      Tags are read with `git ls-remote` every 6 hours; one toast per version,
+      whose click runs `kanso-chrome.update`. Updating downloads the tag into
+      `.kanso-update/`, refuses it unless its `version.json` matches, runs
+      `herdr-app check` on each mod, merges `keys.json` three-way against the
+      installed release's (your own keys stay), replaces the layout only if
+      the release changed it (the old one kept as `kanso.json.old-<time>`),
+      copies the themes, then swaps each mod folder whole. The fresh copy
+      toasts "Kanso updated to X".
 - **Corners**: two radii and nothing else. Surfaces (panes, cards, popovers,
   menus) are 8; controls and rows (buttons, tabs, list rows, tiles, chips,
   fields) are 6; dots are circles.

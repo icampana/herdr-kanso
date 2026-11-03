@@ -161,6 +161,19 @@ herdr-app do layout.switch --name kanso
 `ctrl-shift-l` switches back to your previous layout. Deleting the files
 removes Kanso. Light and dark themes are included (`kanso-day`, `kanso`).
 
+### Updates
+
+Kanso updates itself, apart from Herdr. Herdr's own updates keep their dot on
+Settings; Kanso's show as their own row, **Update Kanso to X**, above
+Settings, and a toast once per version. Every 6 hours the sidebar footer looks
+up this repository's `vX.Y.Z` tags with `git ls-remote`. Clicking the row (or
+the toast) downloads that release, runs `herdr-app check` on each mod, and
+only then swaps the mod folders whole and copies the themes. Your layout and
+keys change only where the release changed them: a key you set yourself is
+never replaced, and if the layout changed, the one you had is kept as
+`layouts/kanso.json.old-<time>`. Installs from before 1.1.0 have no updater:
+update those once by hand as above.
+
 ## Keys
 
 | Keys | What they do |
@@ -195,8 +208,11 @@ The mods run `git` (the spaces list, Files, Changes), `find` (listing a folder
 on Unix, with `bash` as a fallback) and `hc machine ls` (machines). They read
 files only inside the folders you work in.
 
-Only the pull request panel reaches the network: it runs the GitHub CLI
-(`gh`) and talks to GitHub only while the panel is shown. Open with runs `sh`
+Two things reach the network. The pull request panel runs the GitHub CLI
+(`gh`) and talks to GitHub only while the panel is shown. The updater runs
+`git ls-remote` against this repository every 6 hours, and only when you
+choose to update downloads the release with `curl` into
+`~/.config/herdr-app/.kanso-update/`, removed when it is done. Open with runs `sh`
 to find installed editors (app folders, `command -v`, `flatpak`); on macOS it
 opens an editor with `open -a` and caches each app's icon under
 `~/.config/herdr-app/data/open-with/`.
@@ -219,6 +235,17 @@ The tests load each mod's real code into a fake Herdr host and run it against
 real temporary Git repositories and folders. The benchmark compares a git ref
 with your working tree in isolated native Herdr windows; see
 [benchmarks/README.md](benchmarks/README.md).
+
+Versioning: any pull request that changes what Kanso installs (`kanso/mods`,
+`kanso/themes`, `kanso/layouts`, `kanso/keys.json`) bumps
+`kanso/mods/kanso-chrome/version.json` and adds that version's section to
+[CHANGELOG.md](CHANGELOG.md). The bump is semantic and follows from what the
+section lists: Breaking or Removed means major, Added or Deprecated means
+minor, and anything else means patch. `npm run check:version` checks this, and
+CI runs it on every pull request. Merging to main tags and releases the new
+version with its changelog section as the notes
+(`.github/workflows/release.yml`), and that release is what the updater
+offers.
 
 How every part is built, in enough detail to rebuild it:
 [kanso/RECIPE.md](kanso/RECIPE.md). `herdr-app check kanso/mods/<mod>` loads a

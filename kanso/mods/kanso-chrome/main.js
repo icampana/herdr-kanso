@@ -1,14 +1,30 @@
 // Derived from the `workspace-chrome` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
 // Modified by 0OZ: brand bar, solid sidebar footer with Settings, Add machine and an account chip.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-chrome.
-// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-chrome; sidebar footer as centred squares when collapsed, one icon set (icons/), Herdr's mark beside the traffic lights.
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-chrome; sidebar footer as centred squares when collapsed, one icon set (icons/), Herdr's mark beside the traffic lights; an "Update Kanso" row for Kanso's own releases (update.js).
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, run, props, shared, updates, agents, home, window } from "herdr";
+import { theme, run, props, shared, updates, agents, home, window, nextCommand } from "herdr";
+import { Updater } from "./update.js";
 
 const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
 
 export default class WorkspaceChrome extends View {
+  // Only the footer copy looks for Kanso releases (update.js); the top bar's never does.
+  init(_props, cx) {
+    if (!props()?.footer) return;
+    this.updater = new Updater();
+    this.updater.start(cx);
+    // The "available" toast's click: kanso-chrome.update.
+    cx.spawn(async (cx) => {
+      for (;;) {
+        let c;
+        try { c = await nextCommand(); } catch { break; }
+        if (c === "update") this.updater.install(cx);
+      }
+    });
+  }
+
   render() {
     const t = theme();
     const collapsed = shared("sidebar.collapsed") === true;
@@ -33,8 +49,16 @@ export default class WorkspaceChrome extends View {
           .child(div().truncate().text_size(13).font_medium().text_color(t.foreground).child(who))
           .child(div().truncate().text_size(11.5).text_color(t.muted).child(count))));
       const ready = Boolean(updates().app.ready);
+      // Kanso's own release, apart from Herdr's: its own row, shown only when there is one.
+      const kanso = this.updater?.available();
+      const busy = this.updater?.busy;
+      const kansoLabel = busy ? "Updating Kanso..." : `Update Kanso to ${kanso}`;
       return v_flex().size_full().bg(t.chrome).px(collapsed ? 0 : 8).pt(8).pb(12).gap(2).text_size(13).justify_end()
         .when(collapsed, el => el.items_center())
+        .when(Boolean(kanso), el => el.child(row("kanso-update", "mods/kanso-chrome/icons/refresh.svg", kansoLabel,
+          (_e, cx) => this.updater.install(cx))
+          .when(!busy && !collapsed, el => el.child(dot()))
+          .when(!busy && collapsed, el => el.child(dot().absolute().top(6).right(6)))))
         .child(row("settings", "mods/kanso-chrome/icons/settings.svg", ready ? "Settings · update ready" : "Settings", () => run("app.settings"))
           .when(ready && !collapsed, el => el.child(dot()))
           .when(ready && collapsed, el => el.child(dot().absolute().top(6).right(6))))

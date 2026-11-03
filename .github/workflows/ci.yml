@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags: the version check compares against the last release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Versioning (version.json, CHANGELOG.md, semantic bumps)
+        run: npm run check:version
+      - name: Tests
+        run: npm test
