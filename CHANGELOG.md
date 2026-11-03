@@ -8,6 +8,12 @@ minor version, anything else is a patch. The format follows
 checks all of this, and merging to main releases the version in
 `kanso/mods/kanso-chrome/version.json`, which is what the updater offers.
 
+## [2.0.1] - 2026-11-03
+
+### Changed
+
+- The button of the open panel shows its name beside its icon, so you can tell which panel is open without hovering it.
+
 ## [2.0.0] - 2026-11-03
 
 ### Added

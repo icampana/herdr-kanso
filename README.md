@@ -229,7 +229,7 @@ With the mouse:
 | Scroll over a header or the minimap | Slide the view |
 | Use the order button at the top of the sidebar | Sort each space's sessions by last update, needs you first, kind, screen order, or your own |
 | Hover a session and click its pin | Keep it at the top of its space; drag pinned ones to order them |
-| Hover a panel icon at the top right | See its name |
+| Hover a panel icon at the top right | See its name; the open panel always shows it |
 | Press a panel icon and let go on another | Move it there |
 | Right-click a panel icon | Open Panels: drag them into order, and turn each one on or off |
 | Right-click a file in the Files panel | Open it in an editor, or preview it in the panel |

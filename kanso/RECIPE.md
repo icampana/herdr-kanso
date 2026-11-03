@@ -84,7 +84,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         on one (`on_hover`), its name (12) opens beside the icon: the name's
         box eases from 0 to its width and fades in over 180 ms
         (`transition("width")` and `transition("opacity")`, ease-out, run
-        natively), and closes the same way. No tooltip. Pressing one and letting go on another moves it there.
+        natively), and closes the same way. The open panel's button keeps
+        its name showing. No tooltip. Pressing one and letting go on another moves it there.
         Right-click opens the Panels popup (`kanso-tabs` again, as an
         overlay with `props().arrange`): one 30 tall row per panel with a
         grip, its icon, its name and a switch, dragged the same way into

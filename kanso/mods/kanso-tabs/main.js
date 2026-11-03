@@ -338,12 +338,13 @@ export default class Tabs extends View {
     this.syncPanel(space, now, enabled);
     // A panel turned off while open closes.
     if (now && !enabled.includes(now) && !this.inFlight(now)) this.mount(null);
-    // Icons only: the name opens beside the icon while the pointer is on it.
+    // Icons only: the name opens beside the icon while the pointer is on it,
+    // and stays open on the panel that is open.
     // Pressed on one and let go on another, a button moves there; right-click
     // opens the Panels popup.
     const panelButton = (p) => {
       const on = now === p.id, target = this.dragPanel && this.dragPanel !== p.id;
-      const named = !p.icon || this.hoverPanel === p.id;
+      const named = !p.icon || on || this.hoverPanel === p.id;
       // The name slides open: its box eases from 0 to the text's width
       // (about 6.8 px a character at 12) while it fades in, natively.
       const wide = Math.ceil(String(p.label).length * 6.8) + 10;
