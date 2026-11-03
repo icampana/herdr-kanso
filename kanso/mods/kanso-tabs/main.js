@@ -2,6 +2,7 @@
 // Modified by 0OZ: segmented tab pill, outlined Files and Changes buttons, no bar background.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-tabs; a Specs panel button with the pending count and a needs-you dot (sdd.badge).
 // Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-tabs; tabs and panel buttons without outlines; side panels mounted on demand (only the open one exists); Specs and Insights offered only when installed; trackpad scrolling moves one tab per swipe.
+// Modified by Iván Campaña (https://github.com/icampana): layout writers set the tree only when it is Kanso's, so a switch from another layout never saves that layout into kanso.json.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, agents, terminals, run, openOverlay, theme, window, shared, setShared, layout, readTextFile, appHome } from "herdr";

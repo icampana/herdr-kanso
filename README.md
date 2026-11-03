@@ -125,6 +125,9 @@ The mods grew out of the ones shipped with Herdr, through the 0oz-design fork
 and the minimalistic layout; [NOTICE](NOTICE) and each file's header say who
 changed what.
 
+Contributors: Iván Campaña ([icampana](https://github.com/icampana)), who found
+and fixed the layout writers saving another layout's tree into kanso.json.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
