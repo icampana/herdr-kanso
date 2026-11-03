@@ -31,6 +31,9 @@ const PEOPLE = "query($o:String!,$r:String!){viewer{login} repository(owner:$o,n
 const LABELS = "query($o:String!,$r:String!){repository(owner:$o,name:$r){labels(first:100,orderBy:{field:NAME,direction:ASC}){pageInfo{hasNextPage} nodes{name color description}}}}";
 // Every open pull request of this repository, by anyone: the list a click picks from.
 const OPEN = "number,title,url,isDraft,updatedAt,author,headRefName,baseRefName,reviewDecision,statusCheckRollup,additions,deletions";
+// The repository's finished ones (merged or closed), read only when that tab opens.
+const DONE = "number,title,url,state,updatedAt,mergedAt,closedAt,author,headRefName,baseRefName,additions,deletions";
+const DONE_LIMIT = 30;
 const NO_PR = /no (open )?pull requests? found|could not determine current branch/i;
 const MAX_DIFF = 400;
 const FILE_ROWS = 8;
@@ -116,7 +119,9 @@ export class PullRequest {
     this.expanded = { checks: false, files: false, body: false }; this.width = 368;
     this.openPrs = []; this.selected = null; // a pull request's URL; null: the branch's own, else the newest
     this.fallback = false; // shown: the newest, as the branch has none
-    this.listing = false; // the page of open ones instead of the one shown
+    this.listing = false; // the page of pull requests instead of the one shown
+    this.tab = "open"; // that page's tab: "open", or "closed" (merged or closed, newest first)
+    this.closedPrs = null; this.closedLoading = false;
     this.picker = null; this.candidates = null; this.query = "";
     this.search = InputState.new({ placeholder: "Search" });
     this.search.on("change", (_e, cx) => { this.query = this.search.value(); cx.notify(); });
@@ -150,8 +155,9 @@ export class PullRequest {
       this.context = context; this.root = null; this.branch = null; this.pr = null; this.threads = []; this.diffs = null;
       this.openFile = null; this.error = null; this.note = null; this.none = false; this.armed = null; this.picker = null;
       this.openPrs = []; this.selected = null; this.home = null; this.branchUrl = null; this.outside = false;
-      this.fallback = false; this.listing = false;
+      this.fallback = false; this.listing = false; this.tab = "open"; this.closedPrs = null;
     }
+    if (this.listing && this.tab === "closed") this.loadClosed(cx);
     if (!cwd) return;
     this.cwd = cwd; this.on = on;
     this.loading = true;
@@ -182,9 +188,14 @@ export class PullRequest {
         if (open?.code === 0 && key() === context) {
           try { this.openPrs = JSON.parse(open.stdout).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); } catch {}
         }
+        // `gh pr view` also finds the branch's merged or closed one. That one is
+        // done, so the branch counts as having none.
+        const done = (v) => { try { return ["MERGED", "CLOSED"].includes(JSON.parse(v.stdout).state); } catch { return false; } };
+        const branchHasNone = !want && (view.code !== 0 ? NO_PR.test(view.stderr || view.stdout) : done(view));
+        if (branchHasNone && !this.openPrs.length) { this.none = true; this.pr = null; this.error = null; this.branchUrl = null; return; }
         // The branch has none: the newest open one stands in, the branch offers to create its own.
         let fallback = false;
-        if (view.code !== 0 && !want && NO_PR.test(view.stderr || view.stdout) && this.openPrs.length) {
+        if (branchHasNone) {
           view = await this.gh(["pr", "view", this.openPrs[0].url, "--json", FIELDS]).catch(() => ({ code: 1, stdout: "", stderr: "GitHub could not be read." }));
           if (key() !== context || this.selected !== want) return;
           fallback = true;
@@ -224,8 +235,32 @@ export class PullRequest {
     });
   }
 
-  // Shows another open pull request (by its URL); the branch's own goes back to
-  // following the branch.
+  // The repository's finished pull requests, newest first. Never shown on
+  // their own: only from the list's Closed tab, picked one at a time.
+  loadClosed(cx) {
+    if (this.closedLoading || !this.root) return;
+    this.closedLoading = true;
+    const context = this.context;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await this.gh(["pr", "list", "--state", "closed", "--limit", String(DONE_LIMIT), "--json", DONE]);
+        if (r.code === 0 && key() === context) {
+          const when = (p) => Date.parse(p.mergedAt || p.closedAt || p.updatedAt) || 0;
+          this.closedPrs = JSON.parse(r.stdout).sort((a, b) => when(b) - when(a));
+        }
+      } catch {}
+      finally { this.closedLoading = false; cx.notify(); }
+    });
+  }
+
+  showTab(tab, cx) {
+    this.tab = tab;
+    if (tab === "closed" && this.closedPrs === null) this.loadClosed(cx);
+    cx.notify();
+  }
+
+  // Shows another pull request (by its URL), open or finished; the branch's own
+  // goes back to following the branch.
   choose(p, cx) {
     this.listing = false;
     if (this.pr?.url === p.url) { cx.notify(); return; }
@@ -424,11 +459,9 @@ export class PullRequest {
     return { text: "Open", color: c.dim };
   }
 
-  // Whether there is anything to switch to: hidden when the only one is the one shown.
+  // Whether there is a list to go to: any repository has its closed ones.
   canSwitch() {
-    const list = this.openPrs ?? [];
-    const create = (this.fallback || this.none) && Boolean(this.branch);
-    return list.length > 0 && !(list.length === 1 && list[0].url === this.pr?.url && !create);
+    return Boolean(this.root) && !this.outside;
   }
 
   // The header's pill: "N open" turns to the page of open ones; there, "Back to #n" returns.
@@ -438,18 +471,48 @@ export class PullRequest {
     return Button.new("pr-switch").h(26).pl(10).pr(8).gap(6).flex_none().items_center().rounded(6).cursor_pointer()
       .border_1().border_color(this.listing ? c.muted : c.border)
       .accessibility_label(this.listing ? label : `${this.openPrs.length} open pull requests`)
-      .tooltip(this.listing ? "Back to the one shown" : "Every open pull request")
+      .tooltip(this.listing ? "Back to the one shown" : "Every open pull request, and the closed ones")
       .hover((s) => s.bg(c.subtle))
       .on_click((_e, cx) => { this.listing = !this.listing; cx.notify(); })
       .child(div().text_size(12).text_color(c.text).child(label))
       .when(!this.listing, (el) => el.child(svg(`${ICON}chevron-right.svg`).size(12).text_color(c.muted)));
   }
 
-  // The page of open ones, grouped as this branch, yours and others. Each row
+  // The list page's tabs: the open ones (where it starts) and the closed ones.
+  tabs(c) {
+    const tab = (id, label) => {
+      const on = this.tab === id;
+      return Button.new(`pr-tab-${id}`).h(26).px(10).flex_none().items_center().rounded(6).cursor_pointer()
+        .selected(on).when(on, (el) => el.bg(c.selected)).when(!on, (el) => el.hover((s) => s.bg(c.subtle)))
+        .accessibility_label(label)
+        .on_click((_e, cx) => this.showTab(id, cx))
+        .child(div().text_size(12).text_color(on ? c.text : c.muted).child(label));
+    };
+    const closed = this.closedPrs === null ? "Closed" : `Closed ${this.closedPrs.length >= DONE_LIMIT ? `${DONE_LIMIT}+` : this.closedPrs.length}`;
+    return h_flex().gap(G.xs).items_center().child(tab("open", `Open ${this.openPrs.length}`)).child(tab("closed", closed));
+  }
+
+  // The list page: its tabs, then the open ones (where it starts) or the
+  // closed ones, each grouped as this branch, yours and others' (your colleagues').
+  listPage(c) {
+    let body;
+    if (this.tab === "closed") {
+      if (this.closedPrs === null) body = div().text_size(12).text_color(c.dim).child(this.closedLoading ? "Reading the closed ones…" : "GitHub could not be read.");
+      else if (!this.closedPrs.length) body = div().text_size(12).text_color(c.dim).child("Nothing closed yet.");
+      else body = this.openPage(c, this.closedPrs);
+    } else if (!this.openPrs.length) {
+      body = div().text_size(12).text_color(c.dim).child("Nothing open.");
+    } else body = this.openPage(c);
+    return v_flex().w_full().gap(G.lg).child(this.tabs(c)).child(body);
+  }
+
+  // A page of pull requests, grouped as this branch, yours and others. Each row
   // reads as the hero does in small: the whole title, who and when, then its
   // state in its color and its size; the shown one is selected and says so.
-  openPage(c) {
-    const list = this.openList(), shown = this.pr?.url, me = this.viewer;
+  // Without `rows`, the open ones; with them, finished ones.
+  openPage(c, rows = null) {
+    const finished = rows !== null;
+    const list = finished ? rows : this.openList(), shown = this.pr?.url, me = this.viewer;
     const here = (p) => p.url === this.branchUrl || p.headRefName === this.branch;
     const mine = (p) => Boolean(me) && p.author?.login === me;
     const groups = [
@@ -457,12 +520,16 @@ export class PullRequest {
       ["Yours", list.filter((p) => !here(p) && mine(p))],
       [me ? "Others" : "Open", list.filter((p) => !here(p) && !mine(p))],
     ].filter(([, rows]) => rows.length);
-    const create = (this.fallback || this.none) && Boolean(this.branch);
+    const create = !finished && (this.fallback || this.none) && Boolean(this.branch);
     let n = 0;
     const row = (p) => {
-      const on = p.url === shown, state = this.rowState(p, c), i = n++;
-      const meta = [`#${p.number}`, mine(p) ? "you" : p.author?.login, `updated ${ago(p.updatedAt)}`].filter(Boolean).join(" · ");
-      return Button.new(`pr-open-${i}`).w_full().px(G.md).py(10).rounded(6).cursor_pointer()
+      const on = p.url === shown, i = n++;
+      const state = !finished ? this.rowState(p, c)
+        : p.state === "MERGED" ? { text: "Merged", color: c.violet } : { text: "Closed without merging", color: c.red };
+      const when = !finished ? `updated ${ago(p.updatedAt)}`
+        : p.state === "MERGED" ? `merged ${ago(p.mergedAt || p.updatedAt)}` : `closed ${ago(p.closedAt || p.updatedAt)}`;
+      const meta = [`#${p.number}`, mine(p) ? "you" : p.author?.login, when].filter(Boolean).join(" · ");
+      return Button.new(`pr-${finished ? "done" : "open"}-${i}`).w_full().px(G.md).py(10).rounded(6).cursor_pointer()
         .selected(on)
         .when(on, (el) => el.bg(c.selected))
         .when(!on, (el) => el.hover((s) => s.bg(c.subtle)))
@@ -500,7 +567,7 @@ export class PullRequest {
   header(c, narrow) {
     const pr = this.pr, pill = this.listing || this.canSwitch();
     return h_flex().w_full().items_center().justify_between().gap(G.md)
-      .child(div().truncate().text_size(narrow ? 17 : 20).text_color(c.text).child(this.listing ? "Open pull requests" : "Pull request"))
+      .child(div().truncate().text_size(narrow ? 17 : 20).text_color(c.text).child(this.listing ? "Pull requests" : "Pull request"))
       .child(h_flex().gap(G.xs).items_center().flex_none()
         .when(pill, (el) => el.child(this.switchPill(c)))
         .child(this.iconButton("pr-refresh", "refresh", this.loadedAt ? `Refresh · updated ${clock(this.loadedAt)}` : "Refresh", (cx) => { this.loadedAt = 0; this.refresh(cx); }, c, this.loading))
@@ -756,7 +823,7 @@ export class PullRequest {
     const c = tokens(theme());
     const narrow = (this.width || 368) < 560;
     let body;
-    if (this.listing && this.openPrs.length) body = this.openPage(c);
+    if (this.listing) body = this.listPage(c);
     else if (this.pr) {
       body = v_flex().w_full().gap(narrow ? 36 : 48)
         .child(this.hero(c, narrow))
