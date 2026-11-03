@@ -15,7 +15,7 @@ async function layoutFixture() {
   const state = {}, writes = [];
   const host = {
     shared: (key) => clone(state[key] ?? null), setShared: (key, value) => { state[key] = clone(value); },
-    layout: () => clone(tree), window: () => ({ platform: "macos" }),
+    layout: () => clone(tree), window: () => ({ platform: "macos" }), theme: () => ({ accent: "#000000", background: "#ffffff" }),
     run: (command, args) => { if (command === "layout.set") writes.push(clone(args.layout)); },
   };
   const { Strip } = await load("kanso-strip/main.js", ["Strip"], host);
