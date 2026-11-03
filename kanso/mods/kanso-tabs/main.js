@@ -1,7 +1,7 @@
 // Derived from the `tabs` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
 // Modified by 0OZ: segmented tab pill, outlined Files and Changes buttons, no bar background.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-tabs; a Specs panel button with the pending count and a needs-you dot (sdd.badge).
-// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-tabs; tabs and panel buttons without outlines; side panels mounted on demand (only the open one exists); Specs and Insights offered only when installed; trackpad scrolling moves one tab per swipe.
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-tabs; tabs and panel buttons without outlines; side panels mounted on demand (only the open one exists); Specs offered only when installed, Spend built in; trackpad scrolling moves one tab per swipe.
 // Modified by Iván Campaña (https://github.com/icampana): layout writers set the tree only when it is Kanso's, so a switch from another layout never saves that layout into kanso.json.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -131,7 +131,7 @@ function specsBadge(space, t) {
 const PANELS = {
   files: { mod: "kanso-panel", props: { panel: "files" } }, changes: { mod: "kanso-panel", props: { panel: "changes" } }, pr: { mod: "kanso-panel", props: { panel: "pr" } },
   shipped: { mod: "kanso-panel", props: { panel: "shipped" } },
-  insights: { mod: "token-spend" }, specs: { mod: "sdd-focused" },
+  insights: { mod: "kanso-spend" }, specs: { mod: "sdd-focused" },
 };
 
 function customPanels() {
@@ -162,9 +162,9 @@ export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
     this.panels = storedObject("panels");
-    // Specs and Insights are separate mods: offer each only where it is installed.
+    // Specs (sdd-focused) is a separate mod: offered only where it is installed.
     this.installed = {};
-    for (const id of ["specs", "insights"]) cx.spawn(async (cx) => {
+    for (const id of ["specs"]) cx.spawn(async (cx) => {
       try { if ((await readTextFile(`${appHome()}/mods/${PANELS[id].mod}/main.js`)) !== null) { this.installed[id] = true; cx.notify(); } } catch {}
     });
   }
@@ -202,6 +202,12 @@ export default class Tabs extends View {
     const hidden = (panel ?? body).hidden || Boolean(child?.hidden), mounted = (body.children ?? []).length > 0;
     if (hidden && mounted) this.mount(null);
     else if (!hidden && !mounted) this.mount(this.panels[space?.id] ?? null);
+    // A panel kept from an older Kanso whose mod has a new name (Spend was
+    // token-spend): mounted again with the one this version ships.
+    else if (mounted && child?.id) {
+      const want = panelContent(child.id);
+      if (want?.mod && child.content?.mod && child.content.mod !== want.mod) this.mount(hidden ? null : child.id);
+    }
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -269,9 +275,9 @@ export default class Tabs extends View {
     const panel = find(tree, "panel"), body = find(tree, "panel-body");
     const now = this.openPanel(panel, body);
     const custom = customPanels();
-    // Specs and Insights, where installed, are offered beside the panels the welcome chose.
-    // The PR and Shipped panels ship with Kanso, so they are always offered; custom panels from kanso.panels follow.
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", "shipped", ...Object.keys(this.installed), ...custom.map((p) => p.id)];
+    // Spend (Insights) ships with Kanso, like PR and Shipped; Specs, where installed, follows.
+    // Custom panels from kanso.panels follow.
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "insights", "pr", "shipped", ...Object.keys(this.installed), ...custom.map((p) => p.id)];
     this.reconcile(space, panel, body, now);
     this.syncPanel(space, now, enabled);
     const panelButton = (id, label, icon, extra) => {
@@ -298,8 +304,8 @@ export default class Tabs extends View {
         .child(h_flex().flex_none().gap(2).items_center().children(shown.map(item)))
         .child(button("tab-new", svg("mods/kanso-chrome/icons/plus.svg").size(16), () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 }))))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/kanso-chrome/icons/file.svg")))
-      // Insights (costs per model, project and task) opens in the side panel like Files.
-      .when(Boolean(this.installed.insights), el => el.child(panelButton("insights", "Spend", "mods/kanso-chrome/icons/chart.svg")))
+      // Spend (kanso-spend: costs per model, project and task) opens in the side panel like Files.
+      .child(panelButton("insights", "Spend", "mods/kanso-chrome/icons/chart.svg"))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/kanso-chrome/icons/changes.svg")))
       // The open pull request of the focused branch: status, checks, reviews, threads, files, agent tasks.
       .child(panelButton("pr", "PR", "mods/kanso-chrome/icons/pull-request.svg"))

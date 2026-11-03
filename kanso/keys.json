@@ -55,5 +55,11 @@
     "cmd-shift--": "kanso-strip.fewer",
     "cmd-shift-=": "kanso-strip.more",
     "cmd-shift-0": "kanso-strip.fit"
+  },
+  "mod:kanso-spend": {
+    "cmd-r": "kanso-spend.refresh",
+    "cmd-,": "kanso-spend.settings",
+    "escape": "kanso-spend.back",
+    "cmd-[": "kanso-spend.back"
   }
 }

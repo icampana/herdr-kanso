@@ -8,6 +8,22 @@ minor version, anything else is a patch. The format follows
 checks all of this, and merging to main releases the version in
 `kanso/mods/kanso-chrome/version.json`, which is what the updater offers.
 
+## [1.5.0] - 2026-11-03
+
+### Added
+
+- Spend is part of Kanso. It shows what your AI coding sessions cost at API list price, per model, project and task, and it ships with the layout: its button is always in the tab bar. It was the separate token-spend mod; its first start carries that mod's data over, and its keys are now under `mod:kanso-spend` (#32).
+- Spend: Share to X, LinkedIn or Bluesky, or save the image, the same way as Shipped. The image has only the totals of the unfiltered view: what the period is worth, tasks, tokens, how many projects and models, and the days. Never a project, task or session name; the button hides while a filter or a detail is open (#32).
+
+### Changed
+
+- Spend keeps its index in SQLite, `data/kanso-spend/spend.db`, instead of one JSON file: a scan writes only what changed, and opening the panel skips what only scans need. The first scan moves `store.json` in and keeps it as `store.json.migrated` (#32).
+- Sharing pastes the image into the post for you: the composer opens with the text, and once the page is up the image goes in. On macOS this needs Herdr in Accessibility; without it, the toast says to paste it. Shipped and Spend share through one module (#32).
+
+### Fixed
+
+- Spend no longer docks a second panel at the window's right edge when it is installed (`"place": "none"`) (#32).
+
 ## [1.4.0] - 2026-11-03
 
 ### Added

@@ -6,7 +6,7 @@ import { load, context, temporary, clone, exec as run } from "./helpers.mjs";
 
 const names = ["Shipped", "periodRange", "comparedRange", "periodLabel", "streaks", "computeRecords", "mergeRecords", "periodQuery",
   "REPOS", "fmt", "yourWeeks", "weekAt", "sumWeeks", "heatLayout", "contributionsIn"];
-const shipped = (host = {}) => load("kanso-panel/shipped.js", names, host);
+const shipped = (host = {}) => load("kanso-panel/shipped.js", names, { Share: class { constructor() { this.open = false; } }, ...host });
 const DAY = 86400000;
 // GitHub's week keys: Sunday 00:00 UTC, in seconds.
 const sunday = (y, m, d) => Date.UTC(y, m, d) / 1000;

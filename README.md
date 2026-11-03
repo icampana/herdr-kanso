@@ -30,8 +30,9 @@ beside them.
   draws only the rows you can see. [Measured](benchmarks/README.md): 78% less
   CPU on a 500-row tree.
 
-What you need: the Herdr app, and the GitHub CLI (`gh`) for the pull request
-panel. Spend and Specs are optional integrations, not part of Kanso.
+What you need: the Herdr app, the GitHub CLI (`gh`) for the pull request and
+Shipped panels, and Node 22.15 or newer for Spend. Specs is an optional
+integration, not part of Kanso.
 
 ## The tour
 
@@ -109,11 +110,13 @@ by day, week, month or year:
 - when in the day you ship, and from which machine;
 - every repository you shipped to.
 
-**Share** turns it into an image to post on X, LinkedIn or Bluesky. The image
-has only the global numbers, never the names of your repositories or machines.
-It is copied for you to paste into the post, and the post's text is already
-written. Chrome, Chromium, Brave or Edge draws it (or `rsvg-convert`, or
-QuickLook on macOS).
+**Share** turns it into an image to post on X, LinkedIn or Bluesky, the same
+way Spend does. The image has only the global numbers, never the names of your
+repositories or machines. The composer opens with the words written and the
+image pasted in, for you to check and post. On macOS the paste needs Herdr in
+System Settings > Privacy & Security > Accessibility; without it the image
+waits on the clipboard for Cmd-V. Chrome, Chromium, Brave or Edge draws it (or
+`rsvg-convert`, or QuickLook on macOS), and a copy stays in Downloads.
 
 Your machines fill in what GitHub can't see. Each one reads its own git: every
 branch, every identity you commit with, even an email GitHub can't link to
@@ -162,8 +165,8 @@ greys with color only where it helps you act.
 </details>
 
 The images use native Herdr captures with staged repositories, terminal output
-and pull request data. Spend and Specs, visible in the tab bar, are optional
-integrations.
+and pull request data. Specs, visible in the tab bar, is an optional
+integration.
 
 Kanso is the Japanese principle of simplicity: remove what is not needed. If it
 saves you time, [a star](https://github.com/jlopezlira/herdr-kanso) helps other
@@ -252,17 +255,28 @@ to find installed editors (app folders, `command -v`, `flatpak`); on macOS it
 opens an editor with `open -a` and caches each app's icon under
 `~/.config/herdr-app/data/open-with/`.
 
-Specs (`sdd-focused`) and Insights are optional: install either mod and its
-button appears in the tab bar. Install them while another layout is shown:
-the first time Herdr sees a mod folder it docks a copy into the layout on
-screen, so installing `token-spend` (`"place": "right"`) while Kanso is shown
-leaves a second Spend panel at the window's right edge. If that happened,
-remove the `token-spend` block from the root of `layouts/kanso.json`.
+Spend reads the session files your AI coding tools already write on this
+machine: `~/.claude/projects`, `~/.codex/sessions` and
+`~/.codex/archived_sessions`, `~/.pi/agent/sessions`,
+`~/.local/share/opencode`, and `~/.prjct/pi-usage/` when it exists. It runs
+`node`, and once a day it fetches the OpenRouter model price list. It writes
+only under `~/.config/herdr-app/data/kanso-spend/`, in a SQLite file
+(`spend.db`, through Node's `node:sqlite`). It used to be the separate
+`token-spend` mod; its first start here carries that mod's data over, its
+first scan moves the old `store.json` into `spend.db` (keeping the file as
+`store.json.migrated`), and you can delete `mods/token-spend`. Spend's
+**Share** posts only the totals of the unfiltered view: what the period is
+worth, tasks, tokens, how many projects and models, and the days. Never a
+project, task or session name.
+
+Specs (`sdd-focused`) is optional: install it and its button appears in the
+tab bar. Install it while another layout is shown, because the first time
+Herdr sees a mod folder it docks a copy into the layout on screen.
 
 ## Development
 
 ```sh
-npm test                               # Node.js 20+, Git and Bash; macOS or Linux
+npm test                               # Node.js 22.15+, Git, Bash and sqlite3; macOS or Linux
 npm run bench -- --base origin/main    # macOS, with the Herdr app installed
 ```
 

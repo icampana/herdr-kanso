@@ -158,16 +158,32 @@ test("kanso-tabs opens and closes a custom panel from kanso.panels through commi
   assert.deepEqual(panelBody().children, []);
 });
 
-test("kanso-tabs offers Specs and Insights only when readTextFile finds their main.js", async () => {
-  const { Tabs } = await load("kanso-tabs/main.js", ["Tabs"], {
-    appHome: () => "/home/.config/herdr-app",
-    readTextFile: async (path) => (path.endsWith("/token-spend/main.js") ? "export default class {}" : null),
-  });
-  const tabs = new Tabs();
-  const { cx, drain } = context();
-  tabs.init({}, cx);
-  await drain();
-  assert.deepEqual(clone(tabs.installed), { insights: true });
+test("kanso-tabs offers Specs only when readTextFile finds its main.js; Spend ships with Kanso", async () => {
+  for (const [present, expected] of [["/sdd-focused/main.js", { specs: true }], ["/token-spend/main.js", {}]]) {
+    const read = [];
+    const { Tabs } = await load("kanso-tabs/main.js", ["Tabs"], {
+      appHome: () => "/home/.config/herdr-app",
+      readTextFile: async (path) => { read.push(path); return path.endsWith(present) ? "export default class {}" : null; },
+    });
+    const tabs = new Tabs();
+    const { cx, drain } = context();
+    tabs.init({}, cx);
+    await drain();
+    assert.deepEqual(clone(tabs.installed), expected);
+    assert.ok(!read.some((p) => p.includes("spend")), "Spend is never looked for: it is built in");
+  }
 });
 
 // Parse a single PowerShell literal independently of the production escaper.
+
+test("kanso-tabs remounts a panel kept from the separate token-spend mod as Kanso's Spend", async () => {
+  const { Tabs } = await load("kanso-tabs/main.js", ["Tabs"], { appHome: () => "/x", readTextFile: async () => null, shared: () => undefined });
+  const tabs = new Tabs();
+  const mounted = [];
+  tabs.mount = (id) => mounted.push(id);
+  const body = (mod) => ({ id: "panel-body", children: [{ id: "insights", type: "block", content: { mod } }] });
+  tabs.reconcile({ id: "s1" }, null, body("token-spend"), "insights");
+  assert.deepEqual(mounted, ["insights"], "mounted again, now with kanso-spend");
+  tabs.reconcile({ id: "s1" }, null, body("kanso-spend"), "insights");
+  assert.deepEqual(mounted, ["insights"], "already Kanso's: left alone");
+});

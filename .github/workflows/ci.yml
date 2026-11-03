@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0 # tags: the version check compares against the last release
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Versioning (version.json, CHANGELOG.md, semantic bumps)
         run: npm run check:version
       - name: sqlite3 (Shipped's store tests run the real one)

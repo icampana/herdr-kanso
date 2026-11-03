@@ -21,7 +21,8 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Button } from "gpui-base";
 import { exec, appHome, theme, shared, setShared, notify } from "herdr";
 import { Store } from "./shipped-store.js";
-import { NETWORKS, cardSvg, shareText, renderPng, copyImage, openPath, outputPath } from "./shipped-card.js";
+import { shippedSpec, shareText } from "./shipped-card.js";
+import { Share } from "./share.js";
 
 const ICON = "mods/kanso-chrome/icons/";
 const G = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
@@ -266,6 +267,7 @@ export class Shipped {
     this.store = new Store();
     this.records = shared(RECORDS) ?? {}; this.fresh = new Set();
     this.loading = false; this.pending = false; this.reposOpen = false; this.width = 368;
+    this.share = new Share("kanso-panel");
     this.refresh(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.refresh(cx, true));
   }
@@ -429,46 +431,10 @@ export class Shipped {
     return { streak: current, longest: longest.n, weeks: this.weeks ?? [], records, rhythm: r ? { hours: r.hours, note: rhythmNote(r.hours) } : null };
   }
 
-  // Makes the image, then posts it to a network (copied, to paste into its
-  // composer) or, with no network, saves it and opens it.
-  share(network, cx) {
-    if (this.sharingBusy) return;
-    this.sharingBusy = network ?? "save"; cx.notify();
-    cx.spawn(async (cx) => {
-      try {
-        const s = this.summary(), extra = this.cardData();
-        const t = theme(), c = { ...tokens(t), border: t.border ?? t.dim };
-        const card = cardSvg(s, extra, c);
-        const png = await outputPath(s.period);
-        await exec("mkdir", ["-p", `${appHome()}/data/kanso-panel`]);
-        await renderPng(card, `${appHome()}/data/kanso-panel/share.svg`, png);
-        if (!network) {
-          await openPath(png);
-          notify({ title: "Shipped image saved", body: png.replace(/^.*\/(Downloads\/)?/, (m, d) => (d ? "Downloads/" : "")), level: "success" });
-        } else {
-          const copied = await copyImage(png);
-          await openPath(NETWORKS[network].url(shareText(s, extra)));
-          notify({ title: copied ? `Image copied: paste it into your ${NETWORKS[network].name} post` : `Attach ${png.split("/").pop()} to your ${NETWORKS[network].name} post`, body: png, level: "success" });
-          if (!copied) await openPath(png.replace(/\/[^/]+$/, ""));
-        }
-        this.shareOpen = false;
-      } catch (e) {
-        notify({ title: "The image could not be made", body: String(e?.message ?? e), level: "error" });
-      } finally { this.sharingBusy = null; cx.notify(); }
-    });
-  }
-
-  shareRow(c) {
-    const choice = (id, label, network) => Button.new(`shipped-share-${id}`).h(26).px(10).flex_none().items_center().rounded(6).cursor_pointer()
-      .border_1().border_color(c.border).hover((s) => s.bg(c.subtle))
-      .accessibility_label(label)
-      .on_click((_e, cx) => this.share(network, cx))
-      .child(div().text_size(12).text_color(this.sharingBusy === (network ?? "save") ? c.muted : c.text).child(this.sharingBusy === (network ?? "save") ? "Making the image…" : label));
-    return h_flex().w_full().flex_wrap().gap(G.sm).items_center()
-      .child(div().text_size(12).text_color(c.dim).child("Share to"))
-      .children(Object.entries(NETWORKS).map(([id, n]) => choice(id, n.name, id)))
-      .child(choice("save", "Save image", null))
-      .child(div().w_full().text_size(11).text_color(c.dim).child("Only the totals, streak, records and hours: no repository or machine names. The image is copied for you to paste into the post."));
+  // What the share card holds: this period's global numbers, nothing named.
+  shareCard() {
+    const s = this.summary(), extra = this.cardData();
+    return { spec: shippedSpec(s, extra), text: shareText(s, extra), name: `shipped-${s.period}`, title: "Shipped" };
   }
 
   // ---- drawing, as Spend draws ----
@@ -682,9 +648,10 @@ export class Shipped {
           .child(h_flex().w_full().items_center().justify_between().gap(G.md)
             .child(div().truncate().text_size(narrow ? 17 : 20).text_color(c.text).child("Shipped"))
             .child(h_flex().gap(G.xs).items_center()
-              .child(this.iconButton("shipped-share", "share", "Share", (cx) => { this.shareOpen = !this.shareOpen; cx.notify(); }, c, { disabled: !this.days }))
+              .child(this.iconButton("shipped-share", "share", "Share", (cx) => this.share.toggle(cx), c, { disabled: !this.days }))
               .child(this.iconButton("shipped-refresh", "refresh", "Refresh", (cx) => this.refresh(cx, true), c, { spin: this.loading || this.syncing }))))
-          .when(Boolean(this.shareOpen), (el) => el.child(this.shareRow(c)))
+          .when(Boolean(this.share.open), (el) => el.child(this.share.row(c, () => this.shareCard(),
+            "Only the totals, streak, records and hours: no repository or machine names. The post opens with the image in it.", G.sm)))
           .child(this.periods(c))
           .child(body)));
   }
