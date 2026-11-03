@@ -12,6 +12,11 @@ import { v_flex, h_flex, Popover } from "gpui-base";
 import { agentRow, agentFold, withTerminals, labelsOf, NAME_LABEL, PIN_LABEL, ORDERS, DEFAULT_ORDER, orderSessions, moved } from "./agents.js";
 import { spaces, machines, panes, agents, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 
+// Right after layout.switch, layout() can still return the tree of the layout
+// shown before; setting it would save that tree into kanso.json. Only Kanso's
+// tree has the strip map, so only that tree is written.
+const isKansoTree = (n) => n?.id === "strip-map" || (n?.children ?? []).some(isKansoTree);
+
 // Same helper as kanso-strip, kanso-tabs, kanso-panel and open-with.
 const LAYOUT_INTENT = "kanso.layout";
 // The strip writes its columns under their own key, many times a second, so
@@ -139,7 +144,7 @@ function setRail(open, width) {
   if (!sidebar) return;
   if (tree.resizable !== open || sidebar.min !== min) {
     paintLayout(tree);
-    run("layout.set", { layout: tree });
+    if (isKansoTree(tree)) run("layout.set", { layout: tree });
   }
   run("layout.resize", { id: "sidebar", px: width });
 }

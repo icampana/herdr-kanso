@@ -42,6 +42,11 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, HoverCard } from "gpui-base";
 import { spaces, panes, focused, layout, run, shared, setShared, theme, nextCommand, props, terminals, openOverlay, home } from "herdr";
 
+// Right after layout.switch, layout() can still return the tree of the layout
+// shown before; setting it would save that tree into kanso.json. Only Kanso's
+// tree has the strip map, so only that tree is written.
+const isKansoTree = (n) => n?.id === "strip-map" || (n?.children ?? []).some(isKansoTree);
+
 // How many panes the view holds at once (`st.n`, 1 to 8; you choose). A new
 // column takes 1/n of the view; dragging the divider between two columns
 // resizes them and the others reflow, so the row grows or shrinks in "pages".
@@ -1008,7 +1013,7 @@ export default class Strip extends View {
     if (!tabBlock && now - (this.sets.at(-1) ?? 0) < WRITE_MS) { this.dirty = true; return false; }
     const tree = layout();
     const body = find(tree, "work-body");
-    if (!body?.children) return false;
+    if (!body?.children || !isKansoTree(tree)) return false;
     const mine = (n) => n.id === "main" || String(n.id).startsWith("strip-");
     if (tabBlock && body.children.filter(mine).length === 1 && body.children.find(mine)?.content?.tab) {
       this.applied = text;
