@@ -31,8 +31,7 @@ beside them.
   CPU on a 500-row tree.
 
 What you need: the Herdr app, the GitHub CLI (`gh`) for the pull request and
-Shipped panels, and Node 22.15 or newer for Spend. Specs is an optional
-integration, not part of Kanso.
+Shipped panels, and Node 22.15 or newer for Spend.
 
 ## The tour
 
@@ -165,8 +164,8 @@ greys with color only where it helps you act.
 </details>
 
 The images use native Herdr captures with staged repositories, terminal output
-and pull request data. Specs, visible in the tab bar, is an optional
-integration.
+and pull request data. They predate 2.0, whose tab bar shows the panels as
+icons and no longer offers Specs.
 
 Kanso is the Japanese principle of simplicity: remove what is not needed. If it
 saves you time, [a star](https://github.com/jlopezlira/herdr-kanso) helps other
@@ -230,6 +229,9 @@ With the mouse:
 | Scroll over a header or the minimap | Slide the view |
 | Use the order button at the top of the sidebar | Sort each space's sessions by last update, needs you first, kind, screen order, or your own |
 | Hover a session and click its pin | Keep it at the top of its space; drag pinned ones to order them |
+| Hover a panel icon at the top right | See its name |
+| Press a panel icon and let go on another | Move it there |
+| Right-click a panel icon | Open Panels: drag them into order, and turn each one on or off |
 | Right-click a file in the Files panel | Open it in an editor, or preview it in the panel |
 | Double-click a session, a pane header, a space or a tab | Rename it (an empty name brings the automatic one back) |
 
@@ -268,10 +270,6 @@ first scan moves the old `store.json` into `spend.db` (keeping the file as
 **Share** posts only the totals of the unfiltered view: what the period is
 worth, tasks, tokens, how many projects and models, and the days. Never a
 project, task or session name.
-
-Specs (`sdd-focused`) is optional: install it and its button appears in the
-tab bar. Install it while another layout is shown, because the first time
-Herdr sees a mod folder it docks a copy into the layout on screen.
 
 ## Development
 

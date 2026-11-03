@@ -502,7 +502,7 @@ export default class Strip extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    const name = p.mod === "sdd-focused" ? "Spec" : nameOf(p, givenNames());
+    const name = nameOf(p, givenNames());
     const pic = programIcon(p.program, 15, t.muted);
     const st = p.status;
     const pane = p.pane;

@@ -8,6 +8,16 @@ minor version, anything else is a patch. The format follows
 checks all of this, and merging to main releases the version in
 `kanso/mods/kanso-chrome/version.json`, which is what the updater offers.
 
+## [2.0.0] - 2026-11-03
+
+### Added
+
+- The panel buttons at the top right are icons; the one under the pointer shows its name beside it. Press one and let go on another to move it there. Right-click one to open Panels, where you drag them into order and turn each one on or off. The order and the switches are kept for every space.
+
+### Removed
+
+- Specs (the separate `sdd-focused` mod) is no longer offered in the tab bar, and a Specs panel left open closes. Kanso never included it; remove `mods/sdd-focused` if it is installed.
+
 ## [1.5.0] - 2026-11-03
 
 ### Added

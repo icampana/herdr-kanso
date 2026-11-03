@@ -78,10 +78,19 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
         (13) shows on the active tab only when there is more than one tab.
       - After the tabs, a + (16 icon, 28 square) opens the shipped
         `new-menu`.
-      - At the right are the panel buttons: Files, Spend, Changes, PR,
-        Specs and Shipped (trophy icon). They are ghost buttons 26 tall (icon 15, text 12) with a wash
-        when their panel is open. Specs shows only when its mod is
-        installed.
+      - At the right are the panel buttons: Files, Spend, Changes, PR and
+        Shipped (trophy icon), as icons only (15, in a 26 square ghost
+        button), and a wash when their panel is open. While the pointer is
+        on one (`on_hover`), its name (12) opens beside the icon: the name's
+        box eases from 0 to its width and fades in over 180 ms
+        (`transition("width")` and `transition("opacity")`, ease-out, run
+        natively), and closes the same way. No tooltip. Pressing one and letting go on another moves it there.
+        Right-click opens the Panels popup (`kanso-tabs` again, as an
+        overlay with `props().arrange`): one 30 tall row per panel with a
+        grip, its icon, its name and a switch, dragged the same way into
+        order. The order is in shared `kanso.panels.order` and the panels
+        turned off in `kanso.panels.off`; a panel turned off while open
+        closes. Custom panels from `kanso.panels` join the list.
     - **Panes**: an endless canvas (`kanso-strip`). Panes sit side by side
       in columns. You choose how many fit in the view at once, 1 to 8
       (default 2): a new column takes 1/n of it, so on a wide screen you can
@@ -149,7 +158,7 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     - **Side panel**, at the right of the panes: 368 wide (280 to 900),
       hidden by default. It holds whichever panel is open: `kanso-panel`
       told `files`, `changes`, `pr` or `shipped` (`props.panel`), `kanso-spend`
-      (Spend) or `sdd-focused`.
+      (Spend). A panel Kanso no longer has (Specs, before 2.0) closes.
       The Shipped panel (`kanso-panel` with `shipped`) is vanity metrics on
       purpose, drawn like Spend. It has:
       - a header: "Shipped" (20), a share icon and a refresh icon. Share
@@ -460,7 +469,6 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     spaces.
   - Files, Changes and PR are idle whenever they aren't the shown panel.
     PR rereads every minute while shown, every 20 s while a check runs.
-  - The Specs count on its button shows only while Specs is open.
 - **Background**:
   - While the window is behind others, the spaces list checks git every 5 s
     instead of every 0.5 s.
@@ -553,9 +561,9 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
     to learn whether it is visible.
   - All are derived from Herdr's shipped mods (Apache-2.0) through the 0OZ
     and minimalistic forks, and all use `"place": "none"`.
-- **Optional mod it can show, not included**: `sdd-focused` (Specs, by José
-  Gutiérrez, from the minimalistic layout). When it is in `mods/`, its button
-  appears. Spend (`kanso-spend`) is included.
+- Spend (`kanso-spend`) is included. Specs (`sdd-focused`, by José
+  Gutiérrez, from the minimalistic layout) was offered when installed, up to
+  1.5; Kanso no longer shows it.
 - **Herdr functions**: `spaces`, `panes`, `agents`, `terminals`, `machines`,
   `layout`, `theme`, `shared`/`setShared`, `window`, `exec`, `hc`,
   `watchFolder`, `readTextFile`, `openOverlay`, `run`, `home`, `appHome`,
