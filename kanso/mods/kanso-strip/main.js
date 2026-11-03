@@ -964,8 +964,14 @@ export default class Strip extends View {
     // the foot, RADIUS tall, draws the slab's rounded bottom over the frame.
     const ruler = (what) => { const px = what === "h" ? 1 : RADIUS; return { id: `strip-ruler-${what}`, type: "block", size: { px }, min: px, max: px, background: "chrome",
       content: { mod: "kanso-strip", props: { ruler: what } } }; };
+    // The selected pane (the one the strip remembers, as its header shows)
+    // wears a fine accent line; the others keep the same width in clear, so
+    // moving the selection never shifts a terminal by a pixel.
+    const t = theme();
+    const sel = ps.length > 1 && !sorting ? st.focus : null;
+    const edgeOf = (id) => ({ width: 1, color: id === sel ? t.accent + "8c" : t.background + "00" });
     const live = (id, size, min) => ({ id: `strip-${id}`, type: "column", size, min, background: "background", radius: RADIUS,
-      children: [header(id), body(id), ruler(id)] });
+      border: edgeOf(id), children: [header(id), body(id), ruler(id)] });
     // One pane: the cell is the column. Stacked: the panes share the height
     // (`hs`, equal until a divider is dragged).
     const share = (c, id) => (c.hs?.[id] ?? 1) / c.panes.reduce((s, k) => s + (c.hs?.[k] ?? 1), 0);

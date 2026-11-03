@@ -1,8 +1,8 @@
 # Kanso
 
 Kanso is a quiet Herdr layout for long days with coding agents. Warm stone
-greys, no outlines, no decoration: the selected pane's header is a shade
-lighter and its title the only text in full ink, and color appears only when
+greys, no decoration: the selected pane's header is a shade lighter, its
+title the only text in full ink and its edge a fine accent line, and color appears only when
 an agent's state matters (working, needs you, finished). Its second idea is that nothing you aren't looking at runs:
 side panels exist only while open, and background checks slow down when the
 window is behind others. Its third is an endless strip of panes: a new pane
@@ -118,7 +118,10 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       always shown). The
       selected pane's header has the `selected` background (in the strip, the
       pane the strip remembers, so it stays marked while a side panel has the
-      keyboard). A pane whose agent needs you has `blocked` at 40% instead,
+      keyboard). With more than one pane in the tab, that pane also wears a
+      1px border in `accent` at 55%, following its rounded corners; the
+      others carry the same border in clear, so a new selection shifts no
+      terminal, and none shows while a pane is held. A pane whose agent needs you has `blocked` at 40% instead,
       a 2px `blocked` bar along the header's bottom breathing between 45% and
       full (1.6 s), its title in full ink, and "Needs you" in `foreground`
       after a breathing dot.
