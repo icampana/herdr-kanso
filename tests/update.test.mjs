@@ -181,3 +181,36 @@ test("A tag whose files say another version is not installed", async (t) => {
   assert.equal(await readFile(join(f.home, "mods/kanso-chrome/main.js"), "utf8"), "// 1.0.0\n", "nothing replaced");
   assert.deepEqual(await readdir(f.home).then((n) => n.filter((x) => x.startsWith("."))), []);
 });
+
+test("Kanso looks for releases on every start, every few minutes, and when asked", async () => {
+  const store = { "kanso.update": { latest: "1.0.0", checked: Date.now(), notified: "1.0.0" } }, toasts = [];
+  let tags = "x\trefs/tags/v1.3.1\n", asked = 0, every = null, offline = false;
+  const host = {
+    appHome: () => "/nowhere", shared: (k) => store[k], setShared: (k, v) => { store[k] = v; },
+    notify: (n) => { toasts.push(n); return "1"; }, readTextFile: async () => '{ "version": "1.3.1" }',
+    layout: () => null, run: () => null,
+    exec: async (command) => { asked++; return command === "git" && !offline ? { code: 0, stdout: tags, stderr: "" } : { code: 128, stdout: "", stderr: "offline" }; },
+  };
+  const { Updater } = await updater(host);
+  const u = new Updater();
+  const { cx, drain } = context();
+  cx.timer = { every(ms, fn) { every = ms; } };
+  u.start(cx); await drain();
+  assert.equal(asked, 1, "a start looks even right after another look");
+  assert.ok(every <= 5 * 60 * 1000, "then every 5 minutes at most");
+
+  await u.check(cx, false, false);
+  assert.equal(asked, 1, "the timer does not look twice within minutes");
+  await u.check(cx, true, true);
+  assert.equal(toasts.at(-1).title, "Kanso is up to date", "asked: it says so");
+
+  tags = "x\trefs/tags/v1.3.1\ny\trefs/tags/v1.4.0\n";
+  await u.check(cx, true, false);
+  assert.equal(toasts.at(-1).title, "Kanso 1.4.0 is available");
+  await u.check(cx, true, true);
+  assert.equal(toasts.filter((n) => n.title === "Kanso 1.4.0 is available").length, 2, "asked again: told again");
+
+  offline = true;
+  await u.check(cx, true, true);
+  assert.equal(toasts.at(-1).title, "Kanso could not check for updates");
+});

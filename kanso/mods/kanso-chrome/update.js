@@ -2,7 +2,8 @@
 //
 // Not Herdr's: the app updates itself and shows its dot on Settings. This
 // updates only Kanso's files. A release is a vX.Y.Z tag whose
-// mods/kanso-chrome/version.json says X.Y.Z. Every 6 hours the footer asks
+// mods/kanso-chrome/version.json says X.Y.Z. When Herdr starts and every 5
+// minutes after (and on kanso-chrome.check) the footer asks
 // GitHub for the tags (`git ls-remote`, no API quota); a newer one shows an
 // "Update Kanso" row and one toast per version. Updating downloads that tag,
 // checks each mod loads (`herdr-app check`), then swaps each mod folder whole
@@ -19,8 +20,10 @@ export const SOURCE = {
 };
 
 const STATE = "kanso.update"; // { latest, checked, notified, done: { version, notes } }
-const EVERY = 6 * 3600 * 1000;
-const TICK = 30 * 60 * 1000;
+// `git ls-remote` is one small request with no API quota, so a new release
+// shows within 5 minutes. EVERY keeps copies and reloads from asking twice.
+const TICK = 5 * 60 * 1000;
+const EVERY = 4 * 60 * 1000;
 // The footer block is sized for Settings, Add machine and the account chip;
 // while a release waits it grows by one row (34 + its gap) to hold it.
 const FOOTER = "sidebar-footer";
@@ -152,7 +155,7 @@ export class Updater {
     cx.spawn(async (cx) => {
       try { this.installed = JSON.parse(await readTextFile(`${appHome()}/mods/kanso-chrome/version.json`) ?? "{}").version ?? null; } catch {}
       this.finished();
-      await this.check(cx);
+      await this.check(cx, true); // on every start, whenever the last look was
       this.fit();
       cx.notify();
     });
@@ -178,14 +181,21 @@ export class Updater {
     notify({ title: `Kanso updated to ${done.version}`, body: done.notes || undefined, level: "success" });
   }
 
-  async check(cx, force = false) {
+  // `report`: say so when there is nothing new or GitHub can't be reached
+  // (kanso-chrome.check); the timer stays quiet.
+  async check(cx, force = false, report = false) {
     const { checked } = this.state();
     if (this.busy || (!force && checked && Date.now() - checked < EVERY)) return;
     let r = null;
     try { r = await exec("git", ["ls-remote", "--tags", "--refs", this.source.remote]); } catch {}
-    if (r?.code !== 0) return; // offline: the next tick tries again
+    if (r?.code !== 0) { // offline: the next tick tries again
+      if (report) notify({ title: "Kanso could not check for updates", body: "GitHub could not be reached.", level: "warning" });
+      return;
+    }
     this.setState({ latest: newestTag(r.stdout), checked: Date.now() });
     const v = this.available();
+    if (report && !v) notify({ title: "Kanso is up to date", body: `You have ${this.installed}, the newest release.`, level: "success" });
+    if (report && v && this.state().notified === v) this.setState({ notified: null }); // asked: say it again
     if (v && this.state().notified !== v) {
       this.setState({ notified: v });
       notify({

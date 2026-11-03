@@ -184,8 +184,11 @@ removes Kanso. Light and dark themes are included (`kanso-day`, `kanso`).
 
 Kanso updates itself, apart from Herdr. Herdr's own updates keep their dot on
 Settings; Kanso's show as their own row, **Update Kanso to X**, above
-Settings, and a toast once per version. Every 6 hours the sidebar footer looks
-up this repository's `vX.Y.Z` tags with `git ls-remote`. Clicking the row (or
+Settings, and a toast once per version. When Herdr starts, and every 5 minutes
+after, the sidebar footer looks up this repository's `vX.Y.Z` tags with
+`git ls-remote`, which is one small request with no API quota, so a release
+shows within minutes. `herdr-app do kanso-chrome.check` (or a key bound to
+`kanso-chrome.check`) looks right away and says whether you are up to date. Clicking the row (or
 the toast) downloads that release, runs `herdr-app check` on each mod, and
 only then swaps the mod folders whole and copies the themes. Your layout and
 keys change only where the release changed them: a key you set yourself is

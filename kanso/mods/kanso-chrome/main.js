@@ -15,12 +15,13 @@ export default class WorkspaceChrome extends View {
     if (!props()?.footer) return;
     this.updater = new Updater();
     this.updater.start(cx);
-    // The "available" toast's click: kanso-chrome.update.
+    // The "available" toast's click: kanso-chrome.update; kanso-chrome.check looks now.
     cx.spawn(async (cx) => {
       for (;;) {
         let c;
         try { c = await nextCommand(); } catch { break; }
         if (c === "update") this.updater.install(cx);
+        else if (c === "check") { await this.updater.check(cx, true, true); this.updater.fit(); cx.notify(); }
       }
     });
   }

@@ -55,7 +55,8 @@ Left to right, then top to bottom. Sizes are px at zoom 1.
       `vX.Y.Z` tag than `version.json` exists, an "Update Kanso to X" row
       (refresh icon, 6 `accent` dot) sits above Settings and the footer
       grows to 192 while it shows (back to 156 after; a size you set is kept).
-      Tags are read with `git ls-remote` every 6 hours; one toast per version,
+      Tags are read with `git ls-remote` on start and every 5 minutes (and on
+      `kanso-chrome.check`, which also toasts "Kanso is up to date"); one toast per version,
       whose click runs `kanso-chrome.update`. Updating downloads the tag into
       `.kanso-update/`, refuses it unless its `version.json` matches, runs
       `herdr-app check` on each mod, merges `keys.json` three-way against the
