@@ -140,6 +140,24 @@ test("The strip's fixed height ruler stands at the row's start, never beside the
   assert.notEqual(ids.at(-1), "strip-ruler-h");
 });
 
+test("kanso-tabs opens and closes a custom panel from kanso.panels through commitLayout", async () => {
+  const f = await layoutFixture();
+  f.host.setShared("kanso.panels", [
+    { id: "workflow", label: "Workflow", icon: "mods/herdr-workflow/icon.svg", mod: "herdr-workflow", props: { tab: "state" } },
+  ]);
+  const { Tabs } = await load("kanso-tabs/main.js", ["Tabs"], f.host);
+  const tabs = new Tabs();
+  tabs.mount("workflow"); f.flush();
+  const panelBody = () => f.body().children.find((node) => node.id === "panel-body");
+  assert.equal(panelBody().hidden, false);
+  assert.deepEqual(panelBody().children, [
+    { id: "workflow", type: "block", content: { mod: "herdr-workflow", props: { tab: "state" } } },
+  ]);
+  tabs.mount(null); f.flush();
+  assert.equal(panelBody().hidden, true);
+  assert.deepEqual(panelBody().children, []);
+});
+
 test("kanso-tabs offers Specs and Insights only when readTextFile finds their main.js", async () => {
   const { Tabs } = await load("kanso-tabs/main.js", ["Tabs"], {
     appHome: () => "/home/.config/herdr-app",

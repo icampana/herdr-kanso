@@ -133,6 +133,18 @@ const PANELS = {
   insights: { mod: "token-spend" }, specs: { mod: "sdd-focused" },
 };
 
+function customPanels() {
+  const list = shared("kanso.panels");
+  return Array.isArray(list) ? list.filter((p) => p && typeof p.id === "string" && typeof p.mod === "string" && !(p.id in PANELS)) : [];
+}
+
+function panelContent(id) {
+  if (PANELS[id]) return { ...PANELS[id] };
+  const custom = customPanels().find((p) => p.id === id);
+  if (!custom) return null;
+  return custom.props !== undefined ? { mod: custom.mod, props: custom.props } : { mod: custom.mod };
+}
+
 const TAB_H = 26; // inside the 2px padding of the pill, so the pill is 30px
 const CLEAR = "#00000000";
 
@@ -168,11 +180,12 @@ export default class Tabs extends View {
   // Shows panel `id` (null: closes it) by rewriting the panel stack to hold
   // only that block.
   mount(id) {
-    if (id && !PANELS[id]) return;
+    const content = id ? panelContent(id) : null;
+    if (id && !content) return;
     if (!walkLayout(layout(), "panel-body")) return;
     this.want = id;
     this.mountedAt = Date.now();
-    commitLayout({ panel: id ? { id, type: "block", content: { ...PANELS[id] } } : null });
+    commitLayout({ panel: id ? { id, type: "block", content } : null });
   }
 
   // A change just sent hasn't landed yet: don't read the old state as a choice.
@@ -254,9 +267,10 @@ export default class Tabs extends View {
     };
     const panel = find(tree, "panel"), body = find(tree, "panel-body");
     const now = this.openPanel(panel, body);
+    const custom = customPanels();
     // Specs and Insights, where installed, are offered beside the panels the welcome chose.
-    // The PR panel ships with Kanso, so it is always offered.
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", ...Object.keys(this.installed)];
+    // The PR panel ships with Kanso, so it is always offered; custom panels from kanso.panels follow.
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", ...Object.keys(this.installed), ...custom.map((p) => p.id)];
     this.reconcile(space, panel, body, now);
     this.syncPanel(space, now, enabled);
     const panelButton = (id, label, icon, extra) => {
@@ -265,7 +279,9 @@ export default class Tabs extends View {
         .text_size(12).bg(on ? t.foreground + "12" : CLEAR)
         .text_color(on ? t.foreground : t.muted)
         .hover(s => s.bg(on ? t.foreground + "12" : t.foreground + "0a").text_color(t.foreground)).on_mouse_down("left", stop)
-        .on_click(() => this.mount(on ? null : id)).child(svg(icon).size(15)).child(label)
+        .on_click(() => this.mount(on ? null : id))
+        .when(Boolean(icon), el => el.child(svg(icon).size(15)))
+        .child(label)
         .when(Boolean(extra), el => el.child(extra));
     };
     // The count comes from the Specs panel itself, so it shows only while that
@@ -287,6 +303,7 @@ export default class Tabs extends View {
       // The open pull request of the focused branch: status, checks, reviews, threads, files, agent tasks.
       .child(panelButton("pr", "PR", "mods/kanso-chrome/icons/pull-request.svg"))
       .when(Boolean(this.installed.specs), el => el.child(panelButton("specs", "Specs", "mods/kanso-chrome/icons/file-text.svg", specsExtra)))
+      .children(custom.map((p) => panelButton(p.id, p.label ?? p.id, p.icon)))
       .when(window()?.buttons, el => el.child(button("minimize", "−", () => run("window.minimize")))
         .child(button("maximize", "□", () => run("window.maximize")))
         .child(button("close-window", svg("mods/kanso-chrome/icons/close.svg").size(13), () => run("window.close"))));
