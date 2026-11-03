@@ -69,4 +69,34 @@ for (const [file, name, write] of writers) {
   });
 }
 
+// Herdr's divider moves only the two nodes beside it: nothing fixed may stand
+// just before the side panel, or its border cannot be dragged.
+const helpers = ["kanso-strip/main.js", "kanso-tabs/main.js", "kanso-panel/lib.js", "open-with/main.js", "kanso-spaces/main.js"];
+for (const file of helpers) {
+  test(`${file} puts the strip's right edge rail after a shown panel`, async () => {
+    const { edgeBesidePanel } = await load(file, ["edgeBesidePanel"], {});
+    const tree = (hidden) => ({ id: "root", children: [{ id: "work-body", children: [
+      { id: "strip-ruler-h" }, { id: "strip-a" }, { id: "strip-edge-right" }, { id: "panel-body", hidden, children: [] }] }] });
+    const order = (t) => t.children[0].children.map((n) => n.id);
+    const shown = tree(false); edgeBesidePanel(shown);
+    assert.deepEqual(order(shown), ["strip-ruler-h", "strip-a", "panel-body", "strip-edge-right"]);
+    edgeBesidePanel(shown);
+    assert.deepEqual(order(shown), ["strip-ruler-h", "strip-a", "panel-body", "strip-edge-right"], "idempotent");
+    const hidden = tree(true); edgeBesidePanel(hidden);
+    assert.deepEqual(order(hidden), ["strip-ruler-h", "strip-a", "strip-edge-right", "panel-body"], "a closed panel leaves it in place");
+  });
+}
+
+test("The strip's fixed height ruler stands at the row's start, never beside the panel", async () => {
+  const f = await layoutFixture();
+  const { Strip } = await load("kanso-strip/main.js", ["Strip"], f.host);
+  const strip = new Strip();
+  strip.row = (st) => st.cols.map((_c, ci) => ({ ci }));
+  strip.shownCols = (st) => st.cols.map((_c, ci) => ci);
+  const st = { cols: [{ panes: ["a"], w: 0.5 }, { panes: ["b"], w: 0.5 }] };
+  const ids = strip.build(st, [{ pane: "a", terminal: "ta" }, { pane: "b", terminal: "tb" }]).map((n) => n.id);
+  assert.equal(ids[0], "strip-ruler-h");
+  assert.notEqual(ids.at(-1), "strip-ruler-h");
+});
+
 // Parse a single PowerShell literal independently of the production escaper.

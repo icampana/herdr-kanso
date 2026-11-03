@@ -18,12 +18,12 @@
 //
 // One of the kanso-panel mod's panels: it exists only while shown.
 import { div, svg } from "gpui-kit";
-import { v_flex, h_flex, Button, Popover, Input, InputState } from "gpui-base";
+import { v_flex, h_flex, Button, Popover, Input, InputState, TextView } from "gpui-base";
 import { exec, knownAgents, notify, run, theme, settings } from "herdr";
 import { location, key, diffRows } from "./lib.js";
 
 const ICON = "mods/kanso-chrome/icons/";
-const FIELDS = "number,title,state,isDraft,url,author,baseRefName,headRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews,reviewRequests,assignees,labels,additions,deletions,changedFiles,files,updatedAt";
+const FIELDS = "number,title,body,state,isDraft,url,author,baseRefName,headRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews,reviewRequests,assignees,labels,additions,deletions,changedFiles,files,updatedAt";
 const THREADS = "query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved isOutdated path line comments(first:1){totalCount nodes{author{login} body url}}}}}}}";
 // T3 Code's candidate reads: assignableUsers is GitHub's own picker list (everyone with access),
 // which, unlike `collaborators`, does not need push access to read.
@@ -34,6 +34,15 @@ const OPEN = "number,title,url,isDraft,updatedAt,author,headRefName,baseRefName,
 const NO_PR = /no (open )?pull requests? found|could not determine current branch/i;
 const MAX_DIFF = 400;
 const FILE_ROWS = 8;
+// The description folds to this height when it is longer than a few lines.
+const BODY_FOLD = 150;
+
+// A pull request's body as Markdown to show: no template comments, no Windows line ends.
+export function cleanBody(text) {
+  return String(text ?? "").replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?(-->|$)/g, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+// Whether it is long enough to fold: more than 6 lines or 480 characters.
+export const longBody = (text) => text.split("\n").length > 6 || text.length > 480;
 
 // Spend's scale: spacing 4/8/12/16/24, controls 26–30 tall, radius 6.
 const G = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
@@ -104,7 +113,7 @@ function quietLink(id, label, onClick, c, options = {}) {
 export class PullRequest {
   init(cx) {
     this.pr = null; this.threads = []; this.diffs = null; this.openFile = null;
-    this.expanded = { checks: false, files: false }; this.width = 368;
+    this.expanded = { checks: false, files: false, body: false }; this.width = 368;
     this.openPrs = []; this.selected = null; // a pull request's URL; null: the branch's own, else the newest
     this.fallback = false; // shown: the newest, as the branch has none
     this.listing = false; // the page of open ones instead of the one shown
@@ -187,7 +196,7 @@ export class PullRequest {
           return;
         }
         const pr = JSON.parse(view.stdout);
-        if (this.pr?.url !== pr.url) { this.diffs = null; this.openFile = null; }
+        if (this.pr?.url !== pr.url) { this.diffs = null; this.openFile = null; this.expanded.body = false; }
         this.pr = pr; this.none = false; this.error = null; this.fallback = fallback;
         if (!want) this.branchUrl = fallback ? null : pr.url;
         if (!this.home && !want) this.home = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(pr.url)?.[1] ?? null;
@@ -495,7 +504,16 @@ export class PullRequest {
       .child(h_flex().gap(G.xs).items_center().flex_none()
         .when(pill, (el) => el.child(this.switchPill(c)))
         .child(this.iconButton("pr-refresh", "refresh", this.loadedAt ? `Refresh · updated ${clock(this.loadedAt)}` : "Refresh", (cx) => { this.loadedAt = 0; this.refresh(cx); }, c, this.loading))
+        .when(Boolean(pr) && !this.listing, (el) => el.child(this.iconButton("pr-copy", this.copied === pr.url ? "check" : "copy", this.copied === pr.url ? "Copied" : "Copy link", (cx) => this.copyUrl(pr.url, cx), c)))
         .when(Boolean(pr), (el) => el.child(this.iconButton("pr-web", "open-with", "Open on GitHub", () => openUrl(pr.url), c))));
+  }
+
+  // The pull request's address to the clipboard; the icon turns to a check for 1.5 s.
+  copyUrl(url, cx) {
+    cx.write_to_clipboard(url);
+    this.copied = url; cx.notify();
+    const at = this.copiedAt = Date.now();
+    cx.timer.after(1500, (cx) => { if (this.copiedAt === at) { this.copied = null; cx.notify(); } });
   }
 
   skeleton(c, narrow) {
@@ -578,6 +596,20 @@ export class PullRequest {
         .child(quietLink("pr-close", "Close", (cx) => this.act("Close", ["pr", "close", pr.url], cx), c, { disabled: Boolean(this.busy) }))))
       .when(pr.state === "CLOSED", (el) => el.child(h_flex().child(quietLink("pr-reopen", "Reopen", (cx) => this.act("Reopen", ["pr", "reopen", pr.url], cx), c, { disabled: Boolean(this.busy) }))))
       .when(Boolean(this.note), (el) => el.child(div().text_size(12).text_color(c.red).child(this.note)));
+  }
+
+  // The description, as GitHub renders it: Markdown, folded to a few lines when long.
+  description(c) {
+    const text = cleanBody(this.pr.body), long = longBody(text), open = this.expanded.body;
+    const toggle = (cx) => { this.expanded.body = !open; cx.notify(); };
+    return v_flex().w_full()
+      .child(this.section(c, "Description"))
+      .child(text
+        ? div().id("pr-body").w_full().text_size(13).line_height(1.5).text_color(c.text)
+          .when(long && !open, (el) => el.max_h(BODY_FOLD).overflow_hidden())
+          .child(TextView.markdown("pr-body-md", text).selectable(true).on_link_click((url) => openUrl(url)))
+        : div().text_size(13).text_color(c.dim).child("No description."))
+      .when(Boolean(text) && long, (el) => el.child(h_flex().pt(G.sm).child(quietLink("pr-body-more", open ? "Show less" : "Show all", toggle, c))));
   }
 
   // Who and what it carries, in T3 Code's meta rows: a quiet label column, the values, a picker.
@@ -728,6 +760,7 @@ export class PullRequest {
     else if (this.pr) {
       body = v_flex().w_full().gap(narrow ? 36 : 48)
         .child(this.hero(c, narrow))
+        .child(this.description(c))
         .child(this.people(c))
         .when(this.checks().length > 0, (el) => el.child(this.checksList(c)))
         .when(this.threads.length > 0, (el) => el.child(this.discussion(c)))

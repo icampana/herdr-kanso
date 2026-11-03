@@ -131,6 +131,20 @@ function paintOthers(tree) {
   }
 }
 
+// A side panel's left border is Herdr's divider, which moves only the two
+// nodes beside it, so a fixed-width neighbor pins it. While a panel shows,
+// the strip's right edge rail (28 px, fixed) stands after the panel instead
+// of before it, and a strip column keeps the border draggable.
+function edgeBesidePanel(tree) {
+  const kids = walkLayout(tree, "work-body")?.children;
+  const at = kids ? kids.findIndex((n) => n.id === "strip-edge-right") : -1;
+  if (at < 0) return;
+  const [edge] = kids.splice(at, 1);
+  const panel = kids[at];
+  const beside = panel && (panel.id === "panel-body" || panel.id === "panel") && !panel.hidden;
+  kids.splice(beside ? at + 1 : at, 0, edge);
+}
+
 // A header's wheel events arrive faster than the controller renders. Each one
 // carries only its own delta, so keep the sum of the ones not yet applied.
 // Wheel or swipe travel in px along the strip: a sideways swipe wins over a
@@ -971,8 +985,10 @@ export default class Strip extends View {
     if (after < row.length) out.push(edge(row[after].ci, "right", row.slice(after)));
     // Pinned columns stay at their side, in their order, always whole.
     const pinned = (side) => st.cols.filter((c) => c.pin === side).map(whole);
-    // The height ruler stands at the end, 1px wide.
-    return [...pinned("left"), ...out, ...pinned("right"), ruler("h")];
+    // The height ruler, 1px wide and fixed, stands at the start: Herdr's
+    // divider cannot move a fixed node, so at the end it pinned the side
+    // panel's border.
+    return [ruler("h"), ...pinned("left"), ...out, ...pinned("right")];
   }
 
 
@@ -1010,6 +1026,7 @@ export default class Strip extends View {
       const rest = body.children.filter((n) => !mine(n));
       body.children = [...rest.slice(0, at), ...nodes, ...rest.slice(at)];
       paintOthers(tree);
+      edgeBesidePanel(tree);
       run("layout.set", { layout: tree });
     } catch { this.halted = now; this.applied = null; return false; }
     finally { this.writing = false; }

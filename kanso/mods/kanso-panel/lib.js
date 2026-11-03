@@ -60,6 +60,21 @@ function paintLayout(tree, preserveSizes = true) {
       sidebar.min = intent.rail.min;
     }
   }
+  edgeBesidePanel(tree);
+}
+
+// A side panel's left border is Herdr's divider, which moves only the two
+// nodes beside it, so a fixed-width neighbor pins it. While a panel shows,
+// the strip's right edge rail (28 px, fixed) stands after the panel instead
+// of before it, and a strip column keeps the border draggable.
+function edgeBesidePanel(tree) {
+  const kids = walkLayout(tree, "work-body")?.children;
+  const at = kids ? kids.findIndex((n) => n.id === "strip-edge-right") : -1;
+  if (at < 0) return;
+  const [edge] = kids.splice(at, 1);
+  const panel = kids[at];
+  const beside = panel && (panel.id === "panel-body" || panel.id === "panel") && !panel.hidden;
+  kids.splice(beside ? at + 1 : at, 0, edge);
 }
 
 function commitLayout(patch) {

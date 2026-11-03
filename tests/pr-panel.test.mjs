@@ -88,3 +88,14 @@ test("Pull request panel shows a quiet placeholder outside a repository, not an 
   assert.equal(panel.outside, true);
   assert.equal(panel.error, null);
 });
+
+test("Pull request panel reads the description and folds it only when long", async () => {
+  const { cleanBody, longBody, FIELDS } = await load("kanso-panel/pr.js", ["cleanBody", "longBody", "FIELDS"], {});
+  assert.ok(FIELDS.split(",").includes("body"), "gh reads the body");
+  assert.equal(cleanBody("## Summary\r\n<!-- template hint -->\r\nFixes it.\r\n\r\n\r\n\r\nDone."), "## Summary\n\nFixes it.\n\nDone.");
+  assert.equal(cleanBody("<!-- only a template -->"), "");
+  assert.equal(cleanBody(null), "");
+  assert.equal(longBody("One line."), false);
+  assert.equal(longBody(Array.from({ length: 10 }, (_, i) => `- item ${i}`).join("\n")), true);
+  assert.equal(longBody("x".repeat(600)), true);
+});
