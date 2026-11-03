@@ -101,7 +101,11 @@ opens an editor with `open -a` and caches each app's icon under
 `~/.config/herdr-app/data/open-with/`.
 
 Specs (`sdd-focused`) and Insights are optional: install either mod and its
-button appears in the tab bar.
+button appears in the tab bar. Install them while another layout is shown:
+the first time Herdr sees a mod folder it docks a copy into the layout on
+screen, so installing `token-spend` (`"place": "right"`) while Kanso is shown
+leaves a second Spend panel at the window's right edge. If that happened,
+remove the `token-spend` block from the root of `layouts/kanso.json`.
 
 ## Development
 
