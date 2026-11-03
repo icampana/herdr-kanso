@@ -8,6 +8,12 @@ minor version, anything else is a patch. The format follows
 checks all of this, and merging to main releases the version in
 `kanso/mods/kanso-chrome/version.json`, which is what the updater offers.
 
+## [2.0.2] - 2026-11-03
+
+### Fixed
+
+- Spaces sidebar: creating a new space from "This computer" (`+` or "New space") or the top `+` button passes `{ machine: m ?? "" }` / `{ machine: active?.machine ?? "" }` so Herdr creates the space on the selected machine instead of falling back to the last focused machine.
+
 ## [2.0.1] - 2026-11-03
 
 ### Changed

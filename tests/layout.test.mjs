@@ -199,3 +199,62 @@ test("kanso-tabs remounts a panel kept from the separate token-spend mod as Kans
   tabs.reconcile({ id: "s1" }, null, body("kanso-spend"), "insights");
   assert.deepEqual(mounted, ["insights"], "already Kanso's: left alone");
 });
+
+test("kanso-spaces passes an explicit machine to space.new for local, remote, and active spaces", async () => {
+  const clicks = {};
+  const node = () => {
+    let currentId = null;
+    const proxy = new Proxy({}, {
+      get(_target, prop) {
+        if (prop === "id") return (id) => { currentId = id; return proxy; };
+        if (prop === "on_click") return (fn) => { if (currentId) clicks[currentId] = fn; return proxy; };
+        if (prop === "when") return (cond, fn) => (cond ? fn(proxy) : proxy);
+        return () => proxy;
+      },
+    });
+    return proxy;
+  };
+  const calls = [];
+  let activeMachine = "odin";
+  const spList = () => [
+    { id: "sp-local", name: "local", folder: "/home", machine: null, active: activeMachine === null, tabs: [] },
+    { id: "odin/sp1", name: "remote", folder: "/srv", machine: "odin", active: activeMachine === "odin", tabs: [] },
+  ];
+  const { Spaces } = await load("kanso-spaces/main.js", ["Spaces"], {
+    div: node, svg: node, image: node, h_flex: node, v_flex: node,
+    Popover: { new: node },
+    ORDERS: { updated: "Updated" }, DEFAULT_ORDER: "updated", NAME_LABEL: "kanso.name", PIN_LABEL: "kanso.pin",
+    orderSessions: (l) => l, withTerminals: () => [], labelsOf: () => new Map(),
+    theme: () => ({ foreground: "#fff", muted: "#888", dim: "#666", chrome: "#111", hover: "#222", ansi2: "#0f0" }),
+    shared: () => null, setShared: () => {},
+    spaces: spList, panes: () => [], agents: () => [],
+    machines: () => [{ name: null, layout: "ready" }, { name: "odin", layout: "ready" }],
+    run: (cmd, args) => calls.push([cmd, clone(args ?? null)]),
+  });
+  const view = new Spaces();
+  Object.assign(view, {
+    git: {}, shown: new Set(["odin/sp1"]), born: {}, custom: {}, order: "updated",
+    machines: [{ name: "odin", state: "connected" }], folded: new Set(), agentsFolded: new Set(),
+    orderPicker: node,
+  });
+  view.render();
+
+  const cx = { stop_propagation() {}, notify() {} };
+  clicks["machine-add-local"]({}, cx);
+  clicks["machine-new-local"]({}, cx);
+  clicks["machine-add-odin"]({}, cx);
+  clicks["space-new"]({}, cx);
+
+  activeMachine = null;
+  view.shown.add("sp-local");
+  view.render();
+  clicks["space-new"]({}, cx);
+
+  assert.deepEqual(calls, [
+    ["space.new", { machine: "" }],
+    ["space.new", { machine: "" }],
+    ["space.new", { machine: "odin" }],
+    ["space.new", { machine: "odin" }],
+    ["space.new", { machine: "" }],
+  ]);
+});
