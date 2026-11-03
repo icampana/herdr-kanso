@@ -95,6 +95,25 @@ renders Markdown, including code blocks and checklists.
 
 ![A real Git diff and the native commit message field in Kanso's Changes panel.](docs/screenshots/changes.png)
 
+### See what you shipped
+
+**Shipped** is Spend's other half, and its numbers are meant to make you feel
+good. It counts what you delivered across every repository and organization,
+by day, week, month or year:
+- lines added and removed, with how much you grew against the period before;
+- contributions (private ones included), pull requests merged, commits,
+  reviews and repositories;
+- your totals since you joined GitHub;
+- your streak, with a heat map that fills the panel, up to a whole year;
+- your records, with a toast when you set a new one;
+- when in the day you ship, and from which machine;
+- every repository you shipped to.
+
+Your machines fill in what GitHub can't see. Each one reads its own git: every
+branch, every identity you commit with, even an email GitHub can't link to
+you. They share what they read through a private gist, and Shipped keeps only
+statistics.
+
 ### Every repo and worktree, one sidebar
 
 Repositories and their **nested Git worktrees** sit together, each with its
@@ -208,11 +227,18 @@ The mods run `git` (the spaces list, Files, Changes), `find` (listing a folder
 on Unix, with `bash` as a fallback) and `hc machine ls` (machines). They read
 files only inside the folders you work in.
 
-Two things reach the network. The pull request panel runs the GitHub CLI
-(`gh`) and talks to GitHub only while the panel is shown. The updater runs
-`git ls-remote` against this repository every 6 hours, and only when you
-choose to update downloads the release with `curl` into
-`~/.config/herdr-app/.kanso-update/`, removed when it is done. Open with runs `sh`
+Three things reach the network. The pull request panel runs the GitHub CLI
+(`gh`) and talks to GitHub only while the panel is shown. So does Shipped,
+only while it is shown. Through `gh` it reads your contribution counts and
+each repository's weekly contributor statistics, and it keeps a private gist
+of yours, "Kanso Shipped stats", with one file per machine. It also runs
+`git log` in your repositories on this machine (those of your panes and
+spaces, and under `~/Apps`, `~/Projects` and similar folders, 4 levels deep).
+
+All of it lives in `~/.config/herdr-app/data/kanso-panel/shipped.db`, through
+the `sqlite3` command, and only as statistics. For each commit that is its
+repository, hash, time, lines added and removed, and machine. No messages,
+file names or code. Open with runs `sh`
 to find installed editors (app folders, `command -v`, `flatpak`); on macOS it
 opens an editor with `open -a` and caches each app's icon under
 `~/.config/herdr-app/data/open-with/`.

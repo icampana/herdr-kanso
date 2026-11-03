@@ -130,6 +130,7 @@ function specsBadge(space, t) {
 // Each panel's block content: Files, Changes and PR are one mod (kanso-panel) told which panel it is.
 const PANELS = {
   files: { mod: "kanso-panel", props: { panel: "files" } }, changes: { mod: "kanso-panel", props: { panel: "changes" } }, pr: { mod: "kanso-panel", props: { panel: "pr" } },
+  shipped: { mod: "kanso-panel", props: { panel: "shipped" } },
   insights: { mod: "token-spend" }, specs: { mod: "sdd-focused" },
 };
 
@@ -269,8 +270,8 @@ export default class Tabs extends View {
     const now = this.openPanel(panel, body);
     const custom = customPanels();
     // Specs and Insights, where installed, are offered beside the panels the welcome chose.
-    // The PR panel ships with Kanso, so it is always offered; custom panels from kanso.panels follow.
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", ...Object.keys(this.installed), ...custom.map((p) => p.id)];
+    // The PR and Shipped panels ship with Kanso, so they are always offered; custom panels from kanso.panels follow.
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "pr", "shipped", ...Object.keys(this.installed), ...custom.map((p) => p.id)];
     this.reconcile(space, panel, body, now);
     this.syncPanel(space, now, enabled);
     const panelButton = (id, label, icon, extra) => {
@@ -303,6 +304,8 @@ export default class Tabs extends View {
       // The open pull request of the focused branch: status, checks, reviews, threads, files, agent tasks.
       .child(panelButton("pr", "PR", "mods/kanso-chrome/icons/pull-request.svg"))
       .when(Boolean(this.installed.specs), el => el.child(panelButton("specs", "Specs", "mods/kanso-chrome/icons/file-text.svg", specsExtra)))
+      // What you delivered: lines, pull requests, reviews, streak and records.
+      .child(panelButton("shipped", "Shipped", "mods/kanso-chrome/icons/trophy.svg"))
       .children(custom.map((p) => panelButton(p.id, p.label ?? p.id, p.icon)))
       .when(window()?.buttons, el => el.child(button("minimize", "−", () => run("window.minimize")))
         .child(button("maximize", "□", () => run("window.maximize")))
