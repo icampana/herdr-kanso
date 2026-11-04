@@ -8,6 +8,15 @@ minor version, anything else is a patch. The format follows
 checks all of this, and merging to main releases the version in
 `kanso/mods/kanso-chrome/version.json`, which is what the updater offers.
 
+## [2.1.0] - 2026-11-03
+
+### Added
+
+- Worktrees: a panel that finds every git worktree on your computer, in your repositories' folders and wherever agents left them (temp folders and scratchpads included), with how much disk they take and what each one holds: merged (squash merges included), commits kept on its branch, uncommitted changes, commits only there, or in use. Clean up removes, after a second press, every one that loses nothing and has been idle a day, and deletes the merged branches; one at a time or a whole repository, it says first what would be lost. Folders whose repository moved or was deleted are listed too. A worktree whose repository moved (its `.git` names the old place) is never removed: Repair the link reconnects it. Each one is checked again right before it goes, and one that changed since the scan stays instead of failing.
+- Worktrees keeps a history in SQLite (`data/kanso-panel/worktrees.db`): each worktree once, rewritten only when it changes, and the gone ones with the size they freed, whether removed here or elsewhere. Freed shows the total, the worktrees, merged branches and leftovers cleared, and 30 days of what was freed and of what the worktrees took. The panel opens on the last scan while it checks again.
+- Worktrees: Share posts an image to X, LinkedIn or Bluesky with the totals only, never a repository, branch or folder name: what was freed, or before that, what the worktrees take.
+- Worktrees: Explain it on a worktree, or Review the ones that need a look, asks your agent in a new tab what that work is and whether it already lives somewhere else. The agent changes nothing.
+
 ## [2.0.1] - 2026-11-03
 
 ### Changed

@@ -1,7 +1,7 @@
 // Derived from the `tabs` mod shipped with Herdr (Apache-2.0, https://github.com/herdrdev/herdr-app).
 // Modified by 0OZ: segmented tab pill, outlined Files and Changes buttons, no bar background.
 // Modified by José Gutiérrez (minimalistic, 0oz design fork): renamed from oz-tabs; a Specs panel button with the pending count and a needs-you dot (sdd.badge).
-// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-tabs; tabs and panel buttons without outlines; side panels mounted on demand (only the open one exists); Spend built in, Specs dropped; panel buttons are icons with their name on hover, dragged into any order, and turned on or off in a Panels popup (right-click one); trackpad scrolling moves one tab per swipe.
+// Modified by jlopezlira (Kanso, https://github.com/jlopezlira/herdr-kanso): renamed from mn-tabs; tabs and panel buttons without outlines; side panels mounted on demand (only the open one exists); Spend and Worktrees built in, Specs dropped; panel buttons are icons with their name on hover, dragged into any order, and turned on or off in a Panels popup (right-click one); trackpad scrolling moves one tab per swipe.
 // Modified by Iván Campaña (https://github.com/icampana): layout writers set the tree only when it is Kanso's, so a switch from another layout never saves that layout into kanso.json.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
@@ -117,6 +117,7 @@ function storedObject(key) {
 const PANELS = {
   files: { mod: "kanso-panel", props: { panel: "files" } }, changes: { mod: "kanso-panel", props: { panel: "changes" } }, pr: { mod: "kanso-panel", props: { panel: "pr" } },
   shipped: { mod: "kanso-panel", props: { panel: "shipped" } },
+  worktrees: { mod: "kanso-panel", props: { panel: "worktrees" } },
   insights: { mod: "kanso-spend" },
 };
 
@@ -138,6 +139,8 @@ const BUILTIN = [
   { id: "pr", label: "PR", icon: `${ICON}pull-request.svg` },
   // What you delivered: lines, pull requests, reviews, streak and records.
   { id: "shipped", label: "Shipped", icon: `${ICON}trophy.svg` },
+  // Every git worktree on this computer; remove the ones agents left behind.
+  { id: "worktrees", label: "Worktrees", icon: `${ICON}worktree.svg` },
 ];
 const list = (key) => { const v = shared(key); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; };
 

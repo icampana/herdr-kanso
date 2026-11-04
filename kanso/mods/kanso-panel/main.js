@@ -1,9 +1,10 @@
 // Kanso's side panels, by jlopezlira (https://github.com/jlopezlira/herdr-kanso). Apache-2.0.
 //
-// One mod, five panels: `props.panel` is "files" (a lazy file browser),
+// One mod, six panels: `props.panel` is "files" (a lazy file browser),
 // "changes" (git status, diffs and a commit), "pr" (the branch's pull
 // request, or another of your open ones picked from a list), "shipped" (what
-// you delivered: lines, pull requests, reviews, streak and records) or "preview" (one file, rendered: Markdown as the SDK draws it,
+// you delivered: lines, pull requests, reviews, streak and records), "worktrees"
+// (every git worktree on this computer, and removing the ones left behind) or "preview" (one file, rendered: Markdown as the SDK draws it,
 // anything else as read-only code; `props.path`, `props.on`). kanso-tabs mounts one of them in the panel stack on demand and
 // empties the stack to close it, so a panel exists only while it is shown
 // and never has to watch whether it is. Each panel is a plain class with
@@ -17,8 +18,9 @@ import { Changes } from "./changes.js";
 import { PullRequest } from "./pr.js";
 import { Preview } from "./preview.js";
 import { Shipped } from "./shipped.js";
+import { Worktrees } from "./worktrees.js";
 
-const PANELS = { files: Files, changes: Changes, pr: PullRequest, preview: Preview, shipped: Shipped };
+const PANELS = { files: Files, changes: Changes, pr: PullRequest, preview: Preview, shipped: Shipped, worktrees: Worktrees };
 
 export default class Panel extends View {
   init(_props, cx) {
