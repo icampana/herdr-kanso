@@ -122,6 +122,51 @@ branch, every identity you commit with, even an email GitHub can't link to
 you. They share what they read through a private gist, and Shipped keeps only
 statistics.
 
+### Clean up the worktrees agents leave behind
+
+Agents make a worktree for every task, review and audit, and seldom remove it.
+The **Worktrees** panel finds every one on your computer: under the top folders
+of your spaces (`~/Apps` for `~/Apps/acme/web`), wherever each repository says
+they are (temp folders and agent scratchpads included), and the folders left
+behind when a repository moved or was deleted. It shows how much disk they
+take, grouped by repository, and what each one holds:
+- **merged**: its work is already in the default branch or `develop`, squash
+  merges included;
+- **not merged**: its commits stay on its branch when the folder goes;
+- **uncommitted changes**, or **commits only here** (a detached HEAD no branch
+  has): the only work removing it would lose;
+- **in use today** or **open in Herdr**: left alone.
+- **repository moved**: its `.git` still names the old place, so git can't read
+  it. It is never removed; **Repair the link** (`git worktree repair`) connects
+  it again, and then it is checked like any other.
+
+Each one is checked again right before it goes: one that changed since the
+scan (new work, an agent at work there, a link that broke) stays, and the panel
+says why instead of failing. A folder made again as a repository of its own
+keeps its files; only the old worktree record goes.
+
+**Clean up** removes, after a second press, every one that loses nothing and
+has been idle a day, and deletes the branches already merged. A row opens what
+it holds, to open it in a new tab or remove it; **Remove all** does a whole
+repository, and says first what would be lost. Records of folders already gone
+are pruned the same way.
+
+**Freed** keeps score, from a history in SQLite: every worktree the panel has
+seen is kept once and rewritten only when it changes, and one that disappears,
+removed here or anywhere else, stays with the size it freed. It shows how much
+disk was freed, the worktrees, merged branches and leftovers cleared, and a bar
+a day for the last 30 days, of what was freed and of what the worktrees took.
+**Where the space is** splits the disk by what can be done with it (can go,
+needs a look, in use, left behind) and ranks the repositories that take the
+most.
+The panel opens on the last scan while it checks everything again. **Share**
+posts it to X, LinkedIn or Bluesky as an image, the same way Shipped and Spend
+do, with the totals only: never a repository, branch or folder name. Before
+anything is freed, it shares what the worktrees take. **Explain it** on a worktree, or **Review the ones that
+need a look**, hands the question to your agent in a new tab: what that work
+is, whether it already lives in a branch, a remote or a pull request, and what
+to keep. The agent explains; it changes nothing.
+
 ### Every repo and worktree, one sidebar
 
 Repositories and their **nested Git worktrees** sit together, each with its
@@ -256,6 +301,12 @@ file names or code. Open with runs `sh`
 to find installed editors (app folders, `command -v`, `flatpak`); on macOS it
 opens an editor with `open -a` and caches each app's icon under
 `~/.config/herdr-app/data/open-with/`.
+
+Worktrees runs `find`, `git` and `du` on this machine only: under the top
+folders of your spaces and in `/tmp`, and in each repository it finds. It keeps
+the worktrees' folders, repositories, branches, sizes and what they hold in
+`~/.config/herdr-app/data/kanso-panel/worktrees.db` (`sqlite3`), and removes
+only what you confirm. Its share image has totals only.
 
 Spend reads the session files your AI coding tools already write on this
 machine: `~/.claude/projects`, `~/.codex/sessions` and
